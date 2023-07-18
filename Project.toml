@@ -1,0 +1,12 @@
+name = "ContGridModML"
+uuid = "02f9a423-8698-42fc-984c-2fdcd96c33c3"
+authors = ["Julian Fritzsch <julian.fritzsch@etu.unige.ch>"]
+version = "0.1.0"
+
+[deps]
+ContGridMod = "7b3cbbd9-582b-4f4c-9cc3-fb546f746a98"
+Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
