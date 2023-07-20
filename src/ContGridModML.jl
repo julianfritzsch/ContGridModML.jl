@@ -6,6 +6,11 @@ using SparseArrays
 using Flux
 using Random
 using HDF5
+using BlockArrays
+using StatsBase
+using OrdinaryDiffEq
+using JuMP
+using Gurobi
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
 
@@ -25,5 +30,6 @@ end
 
 include("static.jl")
 include("tools.jl")
+include("dynamic.jl")
 
 end # module ContGridModML

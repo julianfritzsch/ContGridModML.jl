@@ -3,8 +3,8 @@ export learn_susceptances
 function discrete_models(
     train_fn::String,
     test_fn::String,
-    n_train::Int,
-    n_test::Int,
+    n_train::Integer,
+    n_test::Integer,
     scale_factor::Real
 )::Tuple{Vector{ContGridMod.DiscModel},Vector{ContGridMod.DiscModel}}
     training = ContGridMod.DiscModel[]
@@ -30,7 +30,7 @@ function check_slack(training::Vector{ContGridMod.DiscModel}, test::Vector{ContG
     return re
 end
 
-function assemble_f(
+function assemble_f_static(
     model::ContGridMod.ContModel,
     training::Vector{ContGridMod.DiscModel},
     test::Vector{ContGridMod.DiscModel},
@@ -71,7 +71,7 @@ function assemble_disc_theta(
     return t_train, t_test
 end
 
-function assemble_matrices(model::ContGridMod.ContModel)::Tuple{SparseMatrixCSC,SparseMatrixCSC,SparseMatrixCSC,Array{<:Real,2}}
+function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{SparseMatrixCSC,SparseMatrixCSC,SparseMatrixCSC,Array{<:Real,2}}
     q_coords = zeros(getnquadpoints(model.cellvalues) * size(model.grid.cells, 1), 2)
     Af = zeros(ndofs(model.dh₁), getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
     Ak = zeros(ndofs(model.dh₁), 2 * getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
@@ -103,7 +103,7 @@ function assemble_matrices(model::ContGridMod.ContModel)::Tuple{SparseMatrixCSC,
     return sparse(Af), sparse(Ak), sparse(dim), q_coords
 end
 
-function projectors(
+function projectors_static(
     model::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real,2}
@@ -126,7 +126,7 @@ function projectors(
         # Get the local coordinates
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         # The cell degrees of freedom so we know which nodal value to use
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
+        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j = 1:n_base_funcs
@@ -138,7 +138,7 @@ function projectors(
     for (i, point) in enumerate(eachrow(q_coords))
         ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
+        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j = 1:n_base_funcs
@@ -158,10 +158,10 @@ function susceptances(
     f_train::Array{<:Real,2},
     t_train::Array{<:Real,2},
     b::Vector{<:Real},
-    n_epochs::Int,
+    n_epochs::Integer,
     n_batches::Int;
     bmin::Real=0.1,
-    seed::Union{Int,Nothing}=nothing,
+    seed::Union{Integer,Nothing}=nothing,
     δ::Real=1.0
 )::Tuple{Vector{<:Real},Array{<:Real,2}}
     opt = ADAM(0.1)
@@ -203,7 +203,7 @@ function learn_susceptances(;
     tf::Real=0.05,
     κ::Real=0.02,
     σ::Real=0.01,
-    seed::Union{Nothing,Int}=1709,
+    seed::Union{Nothing,Integer}=1709,
     bmin::Real=0.1,
     δ=0.5
 )::StaticSol
@@ -211,9 +211,9 @@ function learn_susceptances(;
     train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
     @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
     model = get_params(grid, tf, train[1], κ=κ, σ=σ)
-    Af, Ak, dim, q_coords = assemble_matrices(model)
-    θ_proj, q_proj, q_proj_b = projectors(model, train[1], q_coords)
-    f_train, f_test = assemble_f(model, train, test, Af, q_proj, tf=tf, σ=σ, κ=κ)
+    Af, Ak, dim, q_coords = assemble_matrices_static(model)
+    θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
+    f_train, f_test = assemble_f_static(model, train, test, Af, q_proj, tf=tf, σ=σ, κ=κ)
     t_train, t_test = assemble_disc_theta(train, test)
     rng = Xoshiro(seed)
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90

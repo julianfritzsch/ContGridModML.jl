@@ -1,19 +1,29 @@
 name = "ContGridModML"
 uuid = "02f9a423-8698-42fc-984c-2fdcd96c33c3"
 authors = ["Julian Fritzsch <julian.fritzsch@etu.unige.ch>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
+BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
 ContGridMod = "7b3cbbd9-582b-4f4c-9cc3-fb546f746a98"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Gurobi = "2e9cd046-0924-5485-92f1-d5272153d98b"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
+BlockArrays = "0.16.36"
 ContGridMod = "0.4.0"
 Ferrite = "0.3.14"
 Flux = "0.14.0"
+Gurobi = "1.0.1"
 HDF5 = "0.16.15"
+JuMP = "1.12.0"
+OrdinaryDiffEq = "6.53.3"
+StatsBase = "0.34"
 julia = "1.6.7"
