@@ -1,3 +1,5 @@
+export learn_dynamical_parameters
+
 function assemble_matrices_dynamic(
     model::ContGridMod.ContModel
 )::Tuple{SparseMatrixCSC,SparseMatrixCSC,SparseMatrixCSC,SparseMatrixCSC,Array{<:Real,2}}
@@ -71,7 +73,7 @@ function projectors_dynamic(
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
+        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         dofr = dof_range(cm.dh₂, :ω)
@@ -82,7 +84,7 @@ function projectors_dynamic(
     omega_dofs = Set{Integer}()
     dofr = dof_range(cm.dh₂, :ω)
     for i = 1:size(cm.grid.cells, 1)
-        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(cm.dh₂, i))
+        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, i))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, i)
         push!(omega_dofs, cell_dofs[dofr]...)
     end
@@ -90,7 +92,7 @@ function projectors_dynamic(
     for (i, point) in enumerate(eachrow(q_coords))
         ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)])
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
+        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j = 1:n_base_funcs
@@ -106,8 +108,8 @@ function assemble_f_dynamic(
     fault_ix::Vector{<:Integer},
     dP::Union{Real,Vector{<:Real}},
     Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC;
-    σ::Real=0.01
+    q_proj::SparseMatrixCSC,
+    σ::Real
 )::Array{<:Real,2}
     @assert size(fault_ix) == size(dP) || isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
@@ -157,8 +159,8 @@ function gen_idxs(
 )::Tuple{Vector{<:Integer},Vector{<:Integer}}
     rng = Xoshiro(seed)
     idg = dm.id_gen[dm.p_gen.>=abs(dP)]
-    tri = sample(rng, idg, n_train, replace=false, ordered=true)
-    tei = sample(rng, Int64.(collect(setdiff(Set(idg), Set(tri)))), n_test, replace=false, ordered=true)
+    tri = sort(sample(rng, idg, n_train, replace=false))
+    tei = sort(sample(rng, Int64.(collect(setdiff(Set(idg), Set(tri)))), n_test, replace=false))
     return tri, tei
 end
 
@@ -214,7 +216,8 @@ function lambda_dyn(
     M::SparseMatrixCSC,
     K::SparseMatrixCSC,
     ω_proj::SparseMatrixCSC,
-    idxs::Vector{Integer};
+    tf::Real,
+    idxs::Vector{<:Integer};
     solve_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}()
 )::ODESolution
     function dif_lambda!(du::Vector{<:Real}, u::Vector{<:Real}, _, t::Real)
@@ -225,7 +228,7 @@ function lambda_dyn(
         J[:, :] .= -K'
     end
     rhs_lambda = ODEFunction(dif_lambda!, mass_matrix=M', jac_prototype=K', jac=jac_lambda!)
-    problem_lambda = ODEProblem(rhs_lambda, zeros(size(M', 1)), (25, 0))
+    problem_lambda = ODEProblem(rhs_lambda, zeros(size(M', 1)), (tf, 0))
     sol_lambda = solve(problem_lambda, Trapezoid(); solve_kwargs...)
     return sol_lambda
 end
@@ -262,11 +265,27 @@ function init_expansion(
     return coeffs, eve[:, 1:n_modes]
 end
 
-function simul(disc_sol::ODESolution, M_const::SparseMatrixCSC, K_const::SparseMatrixCSC, m::Vector{<:Real}, d::Vector{<:Real}, f::Vector{<:Real}, A::SparseMatrixCSC, q_proj::SparseMatrixCSC, ω_proj::SparseMatrixCSC, g_proj::Vector{SparseMatrixCSC}, idxs::Vector{<:Integer}, u₀::Vector{<:Real}, tf::Real; cont_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}(), lambda_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}())::Tuple{Vector{<:Real},Real}
+function simul(
+    disc_sol::ODESolution,
+    M_const::SparseMatrixCSC,
+    K_const::SparseMatrixCSC,
+    m::Vector{<:Real},
+    d::Vector{<:Real},
+    f::Vector{<:Real},
+    A::SparseMatrixCSC,
+    q_proj::SparseMatrixCSC,
+    ω_proj::SparseMatrixCSC,
+    g_proj::Vector{SparseMatrixCSC},
+    idxs::Vector{<:Integer},
+    u₀::Vector{<:Real},
+    tf::Real;
+    cont_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}(),
+    lambda_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}()
+)::Tuple{Vector{<:Real},Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs=cont_kwargs)
-    sol_lambda = lambda_dyn(cont_sol, disc_sol, M, K, ω_proj, idxs, solve_kwargs=lambda_kwargs)
+    sol_lambda = lambda_dyn(cont_sol, disc_sol, M, K, ω_proj, tf, idxs, solve_kwargs=lambda_kwargs)
     gr = grad(cont_sol, sol_lambda, g_proj)
     loss_val = loss(cont_sol, disc_sol, ω_proj, idxs)[1]
     return gr, loss_val
@@ -311,16 +330,121 @@ function grad_proj(A::SparseMatrixCSC, q_proj::SparseMatrixCSC, evecs::Array{<:R
     return g_proj
 end
 
-function update(p::Vector{<:Real}, g::Vector{<:Real}, eve::Array{<:Real,2}, m::Real)::Vector{<:Real}
+function update(p::Vector{<:Real}, g::Vector{<:Real}, eve::Array{<:Real,2}, i::Integer, f::Function)::Vector{<:Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)
     @variable(opt, x[1:2*n])
     @constraint(opt, mp, eve * (p[1:n] .+ x[1:n]) .>= 0.0)
     @constraint(opt, dp, eve * (p[n+1:end] .+ x[n+1:end]) .>= 0.0)
-    @constraint(opt, ms, sum(x[1:2*n] .^ 2) <= m)
+    @constraint(opt, ms, sum(x[1:2*n] .^ 2) <= f(i))
     @objective(opt, Min, g' * x[1:2*n])
     optimize!(opt)
     p .+= value.(x)
     return p
+end
+
+function learn_dynamical_parameters(;
+    dm_fn::String=MODULE_FOLDER * "/docs/dm.h5",
+    cm_fn::String=MODULE_FOLDER * "/docs/cm.h5",
+    dP::Real=-9.0,
+    n_train::Integer=12,
+    n_test::Integer=4,
+    dt::Real=0.01,
+    tf::Real=25.0,
+    disc_solve_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}(),
+    cont_solve_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}(),
+    lambda_solve_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}(:saveat => 0.1, :abstol => 1e-3, :reltol => 1e-2),
+    seed::Union{Nothing,Integer}=1709,
+    σ=0.05,
+    n_coeffs=1,
+    n_modes=20,
+    n_epochs=8000,
+    max_function::Function=(x) -> 30 * 2^(x / 500),
+    train_ix::Union{Nothing,Vector{<:Integer}}=nothing,
+    test_ix::Union{Nothing,Vector{<:Integer}}=nothing
+)
+    dm = load_model(dm_fn)
+    cm = load_model(cm_fn)
+    if train_ix !== nothing && test_ix !== nothing
+        n_train = size(train_ix, 1)
+        n_test = size(test_ix, 1)
+    else
+        train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed=seed)
+    end
+    comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, 40)
+    K, M, A, Af, q_coords = assemble_matrices_dynamic(cm)
+    q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
+    disc_sols_train = Vector{ODESolution}()
+    disc_sols_test = Vector{ODESolution}()
+    for i in train_ix
+        push!(disc_sols_train, disc_dyn(dm, i, dP, dt, tf, solve_kwargs=disc_solve_kwargs))
+    end
+    for i in test_ix
+        push!(disc_sols_test, disc_dyn(dm, i, dP, dt, tf, solve_kwargs=disc_solve_kwargs))
+    end
+    f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af, q_proj, σ)
+    f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af, q_proj, σ)
+    eve = lap_eigenvectors(cm)
+    p, eve_p = init_expansion(cm, eve, n_modes, n_coeffs)
+    losses = zeros(n_epochs, n_train)
+    grads = zeros(2 * n_modes, n_train)
+    g_proj = grad_proj(A, q_proj, eve_p, n_modes)
+    u₀ = initial_conditions(cm)
+    for i = 1:n_epochs
+        println("Epoch $i")
+        m = eve_p * p[1:n_modes]
+        d = eve_p * p[n_modes+1:end]
+        @threads for j = 1:n_train
+            g, l = simul(disc_sols_train[j], M, K, m, d, f_train[:, j], A, q_proj, ω_proj, g_proj, comp_idxs, u₀, tf, cont_kwargs=cont_solve_kwargs, lambda_kwargs=lambda_solve_kwargs)
+            grads[:, j] .= g
+            losses[i, j] = l
+            GC.gc()
+        end
+        p = update(p, sum(grads, dims=2)[:, 1], eve_p, i, max_function)
+    end
+    m = eve_p * p[1:n_modes]
+    d = eve_p * p[n_modes+1:end]
+    test_losses = test_loss(disc_sols_test, M, K, m, d, f_test, A, q_proj, ω_proj, comp_idxs, u₀, tf, cont_kwargs=cont_solve_kwargs)
+    update_model!(cm, :m, m)
+    update_model!(cm, :d, d)
+
+    return DynamicSol(
+        test_ix,
+        train_ix,
+        comp_idxs,
+        m,
+        d,
+        p,
+        eve,
+        losses,
+        losses[end, :],
+        test_losses,
+        cm)
+end
+
+function test_loss(
+    disc_sols::Vector{ODESolution},
+    M_const::SparseMatrixCSC,
+    K_const::SparseMatrixCSC,
+    m::Vector{<:Real},
+    d::Vector{<:Real},
+    f_test::Array{<:Real,2},
+    A::SparseMatrixCSC,
+    q_proj::SparseMatrixCSC,
+    ω_proj::SparseMatrixCSC,
+    idxs::Vector{<:Integer},
+    u₀::Vector{<:Real},
+    tf::Real;
+    cont_kwargs::Dict{Symbol,<:Any}=Dict{Symbol,Any}()
+)::Vector{<:Real}
+    n = size(f_test, 2)
+    M = M_const + A * spdiagm(q_proj * m) * A'
+    K = K_const - A * spdiagm(q_proj * d) * A'
+    losses = zeros(n)
+    @threads for i = 1:n
+        cont_sol = cont_dyn(M, K, f_test[:, i], u₀, tf, solve_kwargs=cont_kwargs)
+        losses[i] = loss(cont_sol, disc_sols[i], ω_proj, idxs)[1]
+    end
+    return losses
 end

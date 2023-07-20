@@ -11,6 +11,7 @@ using StatsBase
 using OrdinaryDiffEq
 using JuMP
 using Gurobi
+using Base.Threads
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
 
@@ -23,6 +24,20 @@ struct StaticSol <: ContSol
     test_pred::Array{<:Real,2}
     t_train::Array{<:Real,2}
     t_test::Array{<:Real,2}
+    train_losses::Vector{<:Real}
+    test_losses::Vector{<:Real}
+    model::ContGridMod.ContModel
+end
+
+struct DynamicSol <: ContSol
+    test_ix::Vector{<:Integer}
+    train_ix::Vector{<:Integer}
+    comp_ix::Vector{<:Integer}
+    m::Vector{<:Real}
+    d::Vector{<:Real}
+    coeffs::Vector{<:Real}
+    eve::Array{<:Real,2}
+    losses::Array{<:Real,2}
     train_losses::Vector{<:Real}
     test_losses::Vector{<:Real}
     model::ContGridMod.ContModel

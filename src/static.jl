@@ -126,7 +126,7 @@ function projectors_static(
         # Get the local coordinates
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         # The cell degrees of freedom so we know which nodal value to use
-        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j = 1:n_base_funcs
@@ -138,7 +138,7 @@ function projectors_static(
     for (i, point) in enumerate(eachrow(q_coords))
         ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Integer}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j = 1:n_base_funcs
