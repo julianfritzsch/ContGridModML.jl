@@ -195,6 +195,37 @@ function susceptances(A::AbstractSparseMatrix,
     return max.(b, 0.1), losses
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Learn the line susceptances.
+
+The parameters are learned by calculating the stable solution for multiple dispatches and
+comparing them to the results from the discrete model. The comparison points are obtained
+by using the liear approximation provided by the finite element method.
+
+# Arguments
+- `train_fn::String = MODULE_FOLDER * "/data/ml/training_`": The names of the files
+    containing the training scenarios. The files must be labeled `train_fn1.h5`,
+    `train_fn2.h5`, etc.
+- `test_fn::String = MODULE_FOLDER * "/data/ml/test_"`: The names of the files
+    containing the test scenarios. The files must be labeled `test.h5`, `test.h5`, etc.
+- `grid_fn::String = MODULE_FOLDER * "/data/panta.msh"`: Name of the file containing
+  the mesh
+- `n_train::Int = 48`: Number of training data sets
+- `n_test::Int = 12`: Number of test data sets
+- `n_epochs::Int = 10000`: Number of epochs
+- `n_batches::Int = 3`: Number of batches per epoch
+- `tf::Real = 0.05`: Duration of the heat equation diffusion for the power distribution 
+- `κ::Real = 0.02`: Diffusion constant of the heat equation diffusion for the power
+    distribution
+- `σ::Real = 0.01`: Standard deviation for the initial Gaussian distribution of the
+    parameters
+- `seed::Union{Nothing, Integer} = 1709`: Seed for the ranom selection of batches and the
+    initial guess of ``b_x`` and ``b_y``
+- `bmin::Real = 0.1`: Minimimum value of the suscpetances
+- `δ = 0.5`: Parameter of the Huber loss function
+"""
 function learn_susceptances(;
     train_fn::String = MODULE_FOLDER * "/data/ml/training_",
     test_fn::String = MODULE_FOLDER * "/data/ml/test_",
