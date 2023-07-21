@@ -8,3 +8,5 @@ makedocs(sitename = "ContGridModML",
             "Public" => "api/public.md",
         ],
     ])
+
+deploydocs(repo = "github.com/julianfritzsch/ContGridMod.jl.git")
