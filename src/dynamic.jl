@@ -369,6 +369,41 @@ function update(p::Vector{<:Real},
     return p
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+# Arguments
+ - `dm_fn::String = MODULE_FOLDER * "/docs/dm.h5"`: File name of the discrete model
+ - `cm_fn::String = MODULE_FOLDER * "/docs/cm.h5"`: File name of the continuous model
+ - `dP::Real = -9.0`: Fault size to be simulated
+ - `n_train::Integer = 12`: Amount of faults to consider for training
+ - `n_test::Integer = 4`: Amount of faults to consider for testing
+ - `dt::Real = 0.01`: Step size at which the solutions of the ODEs are saved
+ - `tf::Real = 25.0`: Duration of the simulations
+ - `disc_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()`: Keyword arguments passed
+    to the ODE solver for the discrete model
+ - `cont_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()`: Keyword arguments passed
+    to the ODE solver for the continuous model
+ - `lambda_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(:saveat => 0.1,
+    :abstol => 1e-3, :reltol => 1e-2)`: Keyword arguments passed to the ODE solver of the
+    adjoint equations
+ - `seed::Union{Nothing, Integer} = 1709`: Seed for the random number generator to be used
+     to pick the training and test generators
+ - `σ = 0.05`: Standard deviation of the Gaussian used to distribute the fault
+ - `n_coeffs = 1`: Number of coefficients that are non-zero at the beginning of the
+    training. They correspond to the `n_coeffs` lowest modes of the Laplacian.
+ - `n_modes = 20`: Number of modes the Laplacian that are used to expand the parameters.
+ - `n_epochs = 8000`: Number of epochs used for the training.
+ - `max_function::Function = (x) -> 30 * 2^(x / 500)`: Function that changes the magnitude
+    of the change vector of the parameters wrt the epoch.
+ - `train_ix::Union{Nothing, Vector{<:Integer}} = nothing`: Indices of the generators used
+    for training if they are not supposed to be picked randomly.
+ - `test_ix::Union{Nothing, Vector{<:Integer}} = nothing`: Indices of the generators used
+    for testing if they are not supposed to be picked randomly.
+!!! warning
+    If the training and test generators are not supposed to be picked randomly, both
+    `train_ix` and `test_ix` need to be passed.
+"""
 function learn_dynamical_parameters(;
     dm_fn::String = MODULE_FOLDER * "/docs/dm.h5",
     cm_fn::String = MODULE_FOLDER * "/docs/cm.h5",
@@ -389,7 +424,7 @@ function learn_dynamical_parameters(;
     n_epochs = 8000,
     max_function::Function = (x) -> 30 * 2^(x / 500),
     train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)
+    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
     if train_ix !== nothing && test_ix !== nothing
@@ -462,8 +497,8 @@ function learn_dynamical_parameters(;
     update_model!(cm, :m, m)
     update_model!(cm, :d, d)
 
-    return DynamicSol(test_ix,
-        train_ix,
+    return DynamicSol(train_ix,
+        test_ix,
         comp_idxs,
         m,
         d,
