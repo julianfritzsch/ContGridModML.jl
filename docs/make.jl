@@ -9,6 +9,7 @@ makedocs(sitename = "ContGridModML",
             "Public" => "api/public.md",
             "Internal" => [
                 "api/internal/dynamic.md",
+                "api/internal/tools.md",
             ],
         ],
     ])
