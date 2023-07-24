@@ -1,6 +1,6 @@
 # Dynamic.jl
 
-Description of internally used functions for the learning of dynamic parameters.
+Description of internally used functions for the learning of the dynamic parameters.
 
 ## Contents
 
