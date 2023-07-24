@@ -492,8 +492,8 @@ end
 $(TYPEDSIGNATURES)
 
 # Arguments
- - `dm_fn::String = MODULE_FOLDER * "/docs/dm.h5"`: File name of the discrete model
- - `cm_fn::String = MODULE_FOLDER * "/docs/cm.h5"`: File name of the continuous model
+ - `dm_fn::String = MODULE_FOLDER * "/data/dm.h5"`: File name of the discrete model
+ - `cm_fn::String = MODULE_FOLDER * "/data/cm.h5"`: File name of the continuous model
  - `dP::Real = -9.0`: Fault size to be simulated
  - `n_train::Integer = 12`: Amount of faults to consider for training
  - `n_test::Integer = 4`: Amount of faults to consider for testing
@@ -524,8 +524,8 @@ $(TYPEDSIGNATURES)
     `train_ix` and `test_ix` need to be passed.
 """
 function learn_dynamical_parameters(;
-    dm_fn::String = MODULE_FOLDER * "/docs/dm.h5",
-    cm_fn::String = MODULE_FOLDER * "/docs/cm.h5",
+    dm_fn::String = MODULE_FOLDER * "/data/dm.h5",
+    cm_fn::String = MODULE_FOLDER * "/data/cm.h5",
     dP::Real = -9.0,
     n_train::Integer = 12,
     n_test::Integer = 4,
