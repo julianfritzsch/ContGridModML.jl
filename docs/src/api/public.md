@@ -27,4 +27,6 @@ ContGridModML.DynamicSol
 ```@docs
 learn_susceptances
 learn_dynamical_parameters
+load_sol
+save_sol
 ```

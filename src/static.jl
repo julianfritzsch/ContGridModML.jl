@@ -1,5 +1,10 @@
 export learn_susceptances
 
+"""
+$(TYPEDSIGNATURES)
+
+Load all the discrete models for the training and test data sets.
+"""
 function discrete_models(train_fn::String,
     test_fn::String,
     n_train::Integer,
@@ -16,6 +21,11 @@ function discrete_models(train_fn::String,
     return training, test
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Check if all the slack buses in the training and test data sets are the same.
+"""
 function check_slack(training::Vector{ContGridMod.DiscModel},
     test::Vector{ContGridMod.DiscModel})::Bool
     slack = training[1].id_slack
@@ -29,6 +39,11 @@ function check_slack(training::Vector{ContGridMod.DiscModel},
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Assemble the force vectors for the static solutions.
+"""
 function assemble_f_static(model::ContGridMod.ContModel,
     training::Vector{ContGridMod.DiscModel},
     test::Vector{ContGridMod.DiscModel},
@@ -52,6 +67,12 @@ function assemble_f_static(model::ContGridMod.ContModel,
     return f_train, f_test
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Assemble all the ground truth data into one matrix for the training and one for the test
+sets.
+"""
 function assemble_disc_theta(training::Vector{ContGridMod.DiscModel},
     test::Vector{ContGridMod.DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
     t_train = zeros(size(training[1].th, 1), size(training, 1))
@@ -66,6 +87,21 @@ function assemble_disc_theta(training::Vector{ContGridMod.DiscModel},
     return t_train, t_test
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Create all the necessary finite element matrices from a given model.
+
+The returned matrices are
+- `Af` the matrix needed to create the force vector as `f = Af * p_quad`
+- `Ak` the matrix needed to create the stiffness matrix as `K = A * b_quad * A'`. The
+    susceptances need to be ordered as
+    ``b_x(\\mathbf{q_1}), b_y(\\mathbf{q_1}), b_x(\\mathbf{q_2}),\\dots``
+- `dim` matrix with single entry for the slack bus to ensure well-posedness of the system
+    of linear equations
+- `q_coords` Coordinates of the quadrature points in the same order as stored in
+    the DoF-handler
+"""
 function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -105,6 +141,17 @@ function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
     return sparse(Af), sparse(Ak), sparse(dim), q_coords
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Projectors of nodal values onto the discrete values and the quadrature points.
+
+The returned matrices are
+- `θ_proj` project the nodal values onto the discrete nodes for comparison
+- `q_proj` project the nodal values onto the quadrature points
+- `q_proj_b` project the susceptances onto the quadrature points. The susceptances need to 
+    be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
+"""
 function projectors_static(model::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
@@ -151,6 +198,11 @@ function projectors_static(model::ContGridMod.ContModel,
     return sparse(θ_proj), sparse(q_proj), sparse(q_proj_b)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Do the actual learning of the parameters.
+"""
 function susceptances(A::AbstractSparseMatrix,
     dim::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
@@ -284,6 +336,11 @@ function learn_susceptances(;
         model)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Obtain the prediction of the stable solution for the training and test data sets.
+"""
 function prediction(K::AbstractSparseMatrix,
     f_train::Array{<:Real, 2},
     f_test::Array{<:Real, 2},
@@ -291,6 +348,11 @@ function prediction(K::AbstractSparseMatrix,
     return proj * (K \ f_train), proj * (K \ f_test)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Obtain the loss values for the training and test data sets.
+"""
 function get_losses(train_pred::Array{<:Real, 2},
     test_pred::Array{<:Real, 2},
     t_train::Array{<:Real, 2},
