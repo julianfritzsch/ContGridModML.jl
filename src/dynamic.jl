@@ -512,6 +512,7 @@ $(TYPEDSIGNATURES)
  - `seed::Union{Nothing, Integer} = 1709`: Seed for the random number generator to be used
      to pick the training and test generators
  - `σ = 0.05`: Standard deviation of the Gaussian used to distribute the fault
+ - `n_points = 40`: Number of points for comparison along the largest dimension
  - `n_coeffs = 1`: Number of coefficients that are non-zero at the beginning of the
     training. They correspond to the `n_coeffs` lowest modes of the Laplacian.
  - `n_modes = 20`: Number of modes the Laplacian that are used to expand the parameters.
@@ -541,6 +542,7 @@ function learn_dynamical_parameters(;
         :reltol => 1e-2),
     seed::Union{Nothing, Integer} = 1709,
     σ = 0.05,
+    n_points = 40,
     n_coeffs = 1,
     n_modes = 20,
     n_epochs = 8000,
@@ -555,7 +557,7 @@ function learn_dynamical_parameters(;
     else
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
     end
-    comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, 40)
+    comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
     M, K, A, Af, q_coords = assemble_matrices_dynamic(cm)
     q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
     disc_sols_train = Vector{ODESolution}()
