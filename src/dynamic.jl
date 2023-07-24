@@ -494,6 +494,12 @@ end
 """
 $(TYPEDSIGNATURES)
 
+Learn the inertia and damping distribution for the continuous model.
+
+The frequency response of faults at multiple generators are compared on homogeneously spread
+buses across the grid. The gradient is calculated using an adjoint sensitivity method and
+the updates to the parameters are calculated using a constraint gradient descent method.
+
 # Arguments
  - `dm_fn::String = MODULE_FOLDER * "/data/dm.h5"`: File name of the discrete model
  - `cm_fn::String = MODULE_FOLDER * "/data/cm.h5"`: File name of the continuous model
