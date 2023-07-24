@@ -179,18 +179,21 @@ function generate_comp_idxs(cm::ContGridMod.ContModel,
     tri::Vector{<:Integer},
     tei::Vector{<:Integer},
     n::Int)::Vector{<:Integer}
-    grid_vals = []
-    for i in 1:n
-        for j in 1:n
+    grid_vals = Vector{Real}[]
+    x_min, x_max = extrema(dm.coord[:, 1])
+    y_min, y_max = extrema(dm.coord[:, 2])
+    dx = max((x_max - x_min) / n, (y_max - y_min) / n)
+    for i in x_min:dx:x_max
+        for j in y_min:dx:y_max
             ph = PointEvalHandler(cm.dh₁.grid,
-                [Ferrite.Vec(-0.6 + (i - 1) / (n - 1.0), -0.4 + (j - 1) / (n - 1.0))],
+                [Ferrite.Vec(i, j)],
                 warn = false)
             if ph.cells[1] !== nothing
-                push!(grid_vals, [-0.6 + (i - 1) / (n - 1.0) -0.4 + (j - 1) / (n - 1.0)])
+                push!(grid_vals, [i; j])
             end
         end
     end
-    grid_vals = reduce(vcat, grid_vals)
+    grid_vals = reduce(vcat, grid_vals')
     idxs = Set()
     pidxs = Int.(sort(collect(setdiff(Set(1:3809), union(Set(tri), Set(tei))))))
     for point in eachrow(grid_vals)
