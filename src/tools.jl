@@ -35,11 +35,32 @@ end
 """
 $(TYPEDSIGNATURES)
 
+Turn a dynamic solution into a dictionary.
+"""
+function dynamic_to_dict(sol::DynamicSol)::Dict{String, <:Any}
+    re = Dict{String, Any}()
+    cm_dict = ContGridMod.cont_to_dict(sol.model)
+    re["model"] = cm_dict
+    re["type"] = "DynamicSol"
+    for key in fieldnames(DynamicSol)
+        if key == :model
+            continue
+        end
+        re[string(key)] = getfield(sol, key)
+    end
+    return re
+end
+
+"""
+$(TYPEDSIGNATURES)
+
 Turn a solution into a dict.
 """
 function sol_to_dict(sol::ContSol)::Dict{String, <:Any}
     if typeof(sol) === StaticSol
         return static_to_dict(sol)
+    elseif typeof(sol) === DynamicSol
+        return dynamic_to_dict(sol)
     end
 end
 
@@ -63,6 +84,8 @@ Load a solution from a dictionary.
 function dict_to_sol(data::Dict{String, <:Any})::ContSol
     if data["type"] == "StaticSol"
         return dict_to_static(data)
+    elseif data["type"] == "DynamicSol"
+        return dict_to_dynamic(data)
     end
 end
 
@@ -74,4 +97,14 @@ Load a static solution from a dictionary.
 function dict_to_static(data::Dict{String, <:Any})::StaticSol
     data["model"] = ContGridMod.cont_from_dict(data["model"])
     return StaticSol((data[string(key)] for key in fieldnames(StaticSol))...)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Load a dynamic solution from a dictionary.
+"""
+function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
+    data["model"] = ContGridMod.cont_from_dict(data["model"])
+    return DynamicSol((data[string(key)] for key in fieldnames(DynamicSol))...)
 end

@@ -179,18 +179,21 @@ function generate_comp_idxs(cm::ContGridMod.ContModel,
     tri::Vector{<:Integer},
     tei::Vector{<:Integer},
     n::Int)::Vector{<:Integer}
-    grid_vals = []
-    for i in 1:n
-        for j in 1:n
+    grid_vals = Vector{Real}[]
+    x_min, x_max = extrema(dm.coord[:, 1])
+    y_min, y_max = extrema(dm.coord[:, 2])
+    dx = max((x_max - x_min) / n, (y_max - y_min) / n)
+    for i in x_min:dx:x_max
+        for j in y_min:dx:y_max
             ph = PointEvalHandler(cm.dh₁.grid,
-                [Ferrite.Vec(-0.6 + (i - 1) / (n - 1.0), -0.4 + (j - 1) / (n - 1.0))],
+                [Ferrite.Vec(i, j)],
                 warn = false)
             if ph.cells[1] !== nothing
-                push!(grid_vals, [-0.6 + (i - 1) / (n - 1.0) -0.4 + (j - 1) / (n - 1.0)])
+                push!(grid_vals, [i; j])
             end
         end
     end
-    grid_vals = reduce(vcat, grid_vals)
+    grid_vals = reduce(vcat, grid_vals')
     idxs = Set()
     pidxs = Int.(sort(collect(setdiff(Set(1:3809), union(Set(tri), Set(tei))))))
     for point in eachrow(grid_vals)
@@ -491,9 +494,15 @@ end
 """
 $(TYPEDSIGNATURES)
 
+Learn the inertia and damping distribution for the continuous model.
+
+The frequency response of faults at multiple generators are compared on homogeneously spread
+buses across the grid. The gradient is calculated using an adjoint sensitivity method and
+the updates to the parameters are calculated using a constraint gradient descent method.
+
 # Arguments
- - `dm_fn::String = MODULE_FOLDER * "/docs/dm.h5"`: File name of the discrete model
- - `cm_fn::String = MODULE_FOLDER * "/docs/cm.h5"`: File name of the continuous model
+ - `dm_fn::String = MODULE_FOLDER * "/data/dm.h5"`: File name of the discrete model
+ - `cm_fn::String = MODULE_FOLDER * "/data/cm.h5"`: File name of the continuous model
  - `dP::Real = -9.0`: Fault size to be simulated
  - `n_train::Integer = 12`: Amount of faults to consider for training
  - `n_test::Integer = 4`: Amount of faults to consider for testing
@@ -509,6 +518,7 @@ $(TYPEDSIGNATURES)
  - `seed::Union{Nothing, Integer} = 1709`: Seed for the random number generator to be used
      to pick the training and test generators
  - `σ = 0.05`: Standard deviation of the Gaussian used to distribute the fault
+ - `n_points = 40`: Number of points for comparison along the largest dimension
  - `n_coeffs = 1`: Number of coefficients that are non-zero at the beginning of the
     training. They correspond to the `n_coeffs` lowest modes of the Laplacian.
  - `n_modes = 20`: Number of modes the Laplacian that are used to expand the parameters.
@@ -524,8 +534,8 @@ $(TYPEDSIGNATURES)
     `train_ix` and `test_ix` need to be passed.
 """
 function learn_dynamical_parameters(;
-    dm_fn::String = MODULE_FOLDER * "/docs/dm.h5",
-    cm_fn::String = MODULE_FOLDER * "/docs/cm.h5",
+    dm_fn::String = MODULE_FOLDER * "/data/dm.h5",
+    cm_fn::String = MODULE_FOLDER * "/data/cm.h5",
     dP::Real = -9.0,
     n_train::Integer = 12,
     n_test::Integer = 4,
@@ -538,6 +548,7 @@ function learn_dynamical_parameters(;
         :reltol => 1e-2),
     seed::Union{Nothing, Integer} = 1709,
     σ = 0.05,
+    n_points = 40,
     n_coeffs = 1,
     n_modes = 20,
     n_epochs = 8000,
@@ -552,7 +563,7 @@ function learn_dynamical_parameters(;
     else
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
     end
-    comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, 40)
+    comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
     M, K, A, Af, q_coords = assemble_matrices_dynamic(cm)
     q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
     disc_sols_train = Vector{ODESolution}()

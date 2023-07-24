@@ -20,8 +20,10 @@ Pages = ["tools.md"]
 ## Functions
 
 ```@docs
+ContGridModML.dynamic_to_dict
 ContGridModML.static_to_dict
 ContGridModML.sol_to_dict
 ContGridModML.dict_to_sol
 ContGridModML.dict_to_static
+ContGridModML.dict_to_dynamic
 ```
