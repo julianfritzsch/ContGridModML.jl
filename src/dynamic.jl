@@ -1,5 +1,20 @@
 export learn_dynamical_parameters
 
+"""
+$(TYPEDSIGNATURES)
+
+Create all the necessary finite element matrices from a given model.
+
+The matrices returned are
+- `M_const` the constant (non-parameter dependent) part of the mass matrix
+- `K_const` the constant (non-parameter dependent) part of the stiffness matrix
+- `A` the matrix needed to create the non-constant part of both the mass and stiffness
+    matrices. For example the mass matrix can be calculated as 
+    `M = M_const + A * m_quad * A'`
+- `Af` the matrix needed to create the force vector as `f = Af * (p_quad + fault_quad)`
+- `q_coords` Coordinates of all quadrature points in the same order as stored in the 
+    DoF-handler
+"""
 function assemble_matrices_dynamic(model::ContGridMod.ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -63,9 +78,19 @@ function assemble_matrices_dynamic(model::ContGridMod.ContModel)::Tuple{
     end
     dropzeros!(K_const)
     dropzeros!(M_const)
-    return K_const, M_const, sparse(A), sparse(Af), q_coords
+    return M_const, K_const, sparse(A), sparse(Af), q_coords
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Create projectors for nodal values onto quadrature points and onto comparison locations.
+
+Returned projectors
+- `q_proj` Project the nodal values onto the quadrature points
+- `ω_proj` Project the nodal values onto the given comparison points. This is used to
+    calculate the loss function.
+"""
 function projectors_dynamic(cm::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real, 2},
@@ -111,6 +136,11 @@ function projectors_dynamic(cm::ContGridMod.ContModel,
     return sparse(q_proj), sparse(ω_proj)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Assemble all the force vectors for the dynamical simulations.
+"""
 function assemble_f_dynamic(cm::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     fault_ix::Vector{<:Integer},
@@ -132,6 +162,18 @@ function assemble_f_dynamic(cm::ContGridMod.ContModel,
     return f
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Generate a list of indices used for the comparison of the ground truth with the results
+    from the continuous model.
+
+An equally spaced grid is overlaid over the area. If the points are within the area, the
+closest bus in the discrete model is found and added to the list of indices. The generators
+of the test and training set are not eligible for comparison and are remove from the list of
+possible indices. The number of points can be controlled by `n`, which gives the number of
+points in the largest dimension.
+"""
 function generate_comp_idxs(cm::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     tri::Vector{<:Integer},
@@ -157,6 +199,11 @@ function generate_comp_idxs(cm::ContGridMod.ContModel,
     return pidxs[Int.(sort(collect(idxs)))]
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Randomly choose generators for the training and test sets.
+"""
 function gen_idxs(dm::ContGridMod.DiscModel,
     dP::Real,
     n_train::Integer,
@@ -172,6 +219,11 @@ function gen_idxs(dm::ContGridMod.DiscModel,
     return tri, tei
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Run a dynamical simulation of the discrete model.
+"""
 function disc_dyn(dm::ContGridMod.DiscModel,
     fault_node::Integer,
     fault_size::Real,
@@ -187,6 +239,11 @@ function disc_dyn(dm::ContGridMod.DiscModel,
         solve_kwargs = solve_kwargs)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Run a dynamical simulation of the continuous model.
+"""
 function cont_dyn(M::SparseMatrixCSC,
     K::SparseMatrixCSC,
     f::Vector{<:Real},
@@ -206,6 +263,11 @@ function cont_dyn(M::SparseMatrixCSC,
     return sol_cont
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Create the initial conditions for the continuous simulations.
+"""
 function initial_conditions(cm::ContGridMod.ContModel)::Vector{<:Real}
     stable_sol!(cm)
     ch = ConstraintHandler(cm.dh₂)
@@ -218,6 +280,14 @@ function initial_conditions(cm::ContGridMod.ContModel)::Vector{<:Real}
     return u₀
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Solve the adjoint dynamics.
+
+The continuous and discrete solutions are needed as well as the comparison indices
+to calculate the contributions from the loss function.
+"""
 function lambda_dyn(cont_sol::ODESolution,
     disc_sol::ODESolution,
     M::SparseMatrixCSC,
@@ -243,6 +313,12 @@ function lambda_dyn(cont_sol::ODESolution,
     return sol_lambda
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the eigenvectors of the unweighted Laplacian of the grid used for the continuous
+    simulations.
+"""
 function lap_eigenvectors(cm::ContGridMod.ContModel)::Array{<:Real, 2}
     N = ndofs(cm.dh₁)
     lap = zeros(N, N)
@@ -259,6 +335,16 @@ function lap_eigenvectors(cm::ContGridMod.ContModel)::Array{<:Real, 2}
     return eve
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Create the initial values for the parameters.
+
+The parameters are expanded in eigenvectors of the grid Laplacian. The first `n_modes`
+eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by projecting the
+results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
+set to zero.
+"""
 function init_expansion(cm::ContGridMod.ContModel,
     eve::Array{<:Real, 2},
     n_modes::Integer,
@@ -272,6 +358,14 @@ function init_expansion(cm::ContGridMod.ContModel,
     return coeffs, eve[:, 1:n_modes]
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Do a full simulation step for one data set.
+
+The continuous solution is calculated first and then used to obtain the adjoint solution. Afterwards,
+the gradient and value of the loss function are calculated and returned.
+"""
 function simul(disc_sol::ODESolution,
     M_const::SparseMatrixCSC,
     K_const::SparseMatrixCSC,
@@ -303,6 +397,11 @@ function simul(disc_sol::ODESolution,
     return gr, loss_val
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the gradient from the solution of the adjoint dynamics.
+"""
 function grad(sol_cont::ODESolution,
     sol_lambda::ODESolution,
     g_proj::Vector{SparseMatrixCSC},
@@ -317,6 +416,11 @@ function grad(sol_cont::ODESolution,
     return trapz(0, 25, dt, integrand!, 2 * Nparam)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Trapezoidal rule for the integration of a given function.
+"""
 function trapz(t₀::Real, tf::Real, dt::Real, int!::Function, N::Integer)::Vector{<:Real}
     du = zeros(N)
     int!(du, t₀)
@@ -329,6 +433,11 @@ function trapz(t₀::Real, tf::Real, dt::Real, int!::Function, N::Integer)::Vect
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the value of the loss function.
+"""
 function loss(sol_cont::ODESolution,
     sol_disc::ODESolution,
     ω_proj::SparseMatrixCSC,
@@ -340,6 +449,11 @@ function loss(sol_cont::ODESolution,
     return trapz(0, 25, 0.01, integrand!, 1)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the projection matrix of the discrete solution onto the adjoint solution.
+"""
 function grad_proj(A::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
     evecs::Array{<:Real, 2},
@@ -351,6 +465,11 @@ function grad_proj(A::SparseMatrixCSC,
     return g_proj
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Update the parameters using a restricted gradient descent to ensure positiveness.
+"""
 function update(p::Vector{<:Real},
     g::Vector{<:Real},
     eve::Array{<:Real, 2},
@@ -434,7 +553,7 @@ function learn_dynamical_parameters(;
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
     end
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, 40)
-    K, M, A, Af, q_coords = assemble_matrices_dynamic(cm)
+    M, K, A, Af, q_coords = assemble_matrices_dynamic(cm)
     q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
     disc_sols_train = Vector{ODESolution}()
     disc_sols_test = Vector{ODESolution}()
@@ -510,6 +629,11 @@ function learn_dynamical_parameters(;
         cm)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Calculate the loss values for the test data sets.
+"""
 function test_loss(disc_sols::Vector{ODESolution},
     M_const::SparseMatrixCSC,
     K_const::SparseMatrixCSC,

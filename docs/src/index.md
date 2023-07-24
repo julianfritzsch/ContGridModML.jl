@@ -7,7 +7,8 @@ Implementation of physics-informed machine learning routines for the continous p
 ContGridModML can easily be installed using the Julia package manager.
 ```julia
 julia> using Pkg
-julia> Pkg.add(url="https://github.com/julianfritzsch/ContGridMod.jl")
+julia> Pkg.add(url="https://github.com/laurentpagnier/ContGridMod.jl#FiniteElements")
+julia> Pkg.add(url="https://github.com/julianfritzsch/ContGridModML.jl")
 ```
 !!! note
     This package needs the `FiniteElements` branch of [`ContGridMod`](https://github.com/laurentpagnier/ContGridMod.jl).
