@@ -15,4 +15,4 @@ makedocs(sitename = "ContGridModML",
         ],
     ])
 
-deploydocs(repo = "github.com/julianfritzsch/ContGridModML.jl.git")
+deploydocs(repo = "github.com/julianfritzsch/ContGridModML.jl.git", devbranch = "dev")
