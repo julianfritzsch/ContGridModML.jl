@@ -5,6 +5,9 @@ makedocs(sitename = "ContGridModML",
     modules = [ContGridModML],
     pages = [
         "Introduction" => "index.md",
+        "Implementation" => [
+            "Finite Element Method" => "implementation/finite.md",
+        ],
         "API" => [
             "Public" => "api/public.md",
             "Internal" => [
