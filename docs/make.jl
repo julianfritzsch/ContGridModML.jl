@@ -7,6 +7,7 @@ makedocs(sitename = "ContGridModML",
         "Introduction" => "index.md",
         "Implementation" => [
             "Finite Element Method" => "implementation/finite.md",
+            "General Implementation" => "implementation/general.md",
         ],
         "API" => [
             "Public" => "api/public.md",
