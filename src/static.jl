@@ -115,21 +115,23 @@ function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
         2 * getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
 
     n_basefuncs = getnbasefunctions(model.cellvalues)
-    for (ix, cell) in enumerate(CellIterator(model.dh₁))
+    ix_af = 1
+    ix_ak = 1
+    for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
         for q_point in 1:getnquadpoints(model.cellvalues)
             x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
             dΩ = getdetJdV(model.cellvalues, q_point)
-            idx = (ix - 1) * getnquadpoints(model.cellvalues) + q_point
-            idx2 = 2 * (ix - 1) * getnquadpoints(model.cellvalues) + 2 * q_point - 1
-            q_coords[idx, :] = x
+            q_coords[ix_af, :] = x
             for i in 1:n_basefuncs
                 φᵢ = shape_value(model.cellvalues, q_point, i)
                 ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                Af[dofs[i], idx] = φᵢ * dΩ
-                Ak[dofs[i], idx2:(idx2 + 1)] = ∇φᵢ * sqrt(dΩ)
+                Af[dofs[i], ix_af] = φᵢ * dΩ
+                Ak[dofs[i], ix_ak:ix_ak+1] = ∇φᵢ * sqrt(dΩ)
             end
+            ix_af += 1
+            ix_ak += 2
         end
     end
     # Enforce slack bus
