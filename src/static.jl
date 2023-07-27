@@ -128,7 +128,7 @@ function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
                 φᵢ = shape_value(model.cellvalues, q_point, i)
                 ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
                 Af[dofs[i], ix_af] = φᵢ * dΩ
-                Ak[dofs[i], ix_ak:ix_ak+1] = ∇φᵢ * sqrt(dΩ)
+                Ak[dofs[i], ix_ak:(ix_ak + 1)] = ∇φᵢ * sqrt(dΩ)
             end
             ix_af += 1
             ix_ak += 2
