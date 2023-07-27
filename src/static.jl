@@ -115,21 +115,23 @@ function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
         2 * getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
 
     n_basefuncs = getnbasefunctions(model.cellvalues)
-    for (ix, cell) in enumerate(CellIterator(model.dh₁))
+    ix_af = 1
+    ix_ak = 1
+    for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
         for q_point in 1:getnquadpoints(model.cellvalues)
             x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
             dΩ = getdetJdV(model.cellvalues, q_point)
-            idx = (ix - 1) * getnquadpoints(model.cellvalues) + q_point
-            idx2 = 2 * (ix - 1) * getnquadpoints(model.cellvalues) + 2 * q_point - 1
-            q_coords[idx, :] = x
+            q_coords[ix_af, :] = x
             for i in 1:n_basefuncs
                 φᵢ = shape_value(model.cellvalues, q_point, i)
                 ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                Af[dofs[i], idx] = φᵢ * dΩ
-                Ak[dofs[i], idx2:(idx2 + 1)] = ∇φᵢ * sqrt(dΩ)
+                Af[dofs[i], ix_af] = φᵢ * dΩ
+                Ak[dofs[i], ix_ak:(ix_ak + 1)] = ∇φᵢ * sqrt(dΩ)
             end
+            ix_af += 1
+            ix_ak += 2
         end
     end
     # Enforce slack bus
@@ -155,31 +157,26 @@ The returned matrices are
 function projectors_static(model::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
+    grid_coords = [node.x for node in model.grid.nodes]
+    n_base_funcs = getnbasefunctions(model.cellvalues)
     θ_proj = zeros(size(dm.th, 1), ndofs(model.dh₁))
     q_proj = zeros(size(q_coords, 1), ndofs(model.dh₁))
     q_proj_b = zeros(2 * size(q_coords, 1), 2 * ndofs(model.dh₁))
-    dofr = dof_range(model.dh₁, :u)
-    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
-    grid_coords = [node.x for node in model.grid.nodes]
 
-    for i in 1:size(dm.th, 1)
-        # The PointEvalHandler finds the cell in which the point is located
-        ph = PointEvalHandler(model.grid, [Ferrite.Vec(dm.coord[i, :]...)], warn = :false)
+    for (i, point) in enumerate(eachrow(dm.coord))
+        ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)], warn = :false)
         # If no cell is found (the point is outside the grid), use the closest grid point instead
         if ph.cells[1] === nothing
-            min_ix = argmin([norm(coord .- Ferrite.Vec(dm.coord[i, :]...))
+            min_ix = argmin([norm(coord .- Ferrite.Vec(point...))
                              for coord in grid_coords])
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
-        # Get the local coordinates
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        # The cell degrees of freedom so we know which nodal value to use
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            # Finally this uᵢ(x)
-            θ_proj[i, cell_dofs[j]] = shape_value(pv, 1, j)
+            θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
 
@@ -188,11 +185,10 @@ function projectors_static(model::ContGridMod.ContModel,
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            q_proj[i, cell_dofs[dofr[j]]] = shape_value(pv, 1, j)
-            q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = shape_value(pv, 1, j)
-            q_proj_b[2 * i, 2 * cell_dofs[j]] = shape_value(pv, 1, j)
+            q_proj[i, cell_dofs[j]] = pv.N[j]
+            q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
+            q_proj_b[2 * i, 2 * cell_dofs[j]] = pv.N[j]
         end
     end
     return sparse(θ_proj), sparse(q_proj), sparse(q_proj_b)

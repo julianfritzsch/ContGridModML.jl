@@ -20,7 +20,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 [compat]
 BlockArrays = "0.16.36"
 DocStringExtensions = "0.9.3"
-Ferrite = "0.3.14"
+Ferrite = "=0.3.14"
 Flux = "0.14.0"
 Gurobi = "1.0.1"
 HDF5 = "0.16.15"

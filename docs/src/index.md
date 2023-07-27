@@ -5,7 +5,7 @@ Implementation of physics-informed machine learning routines for the continous p
 ## Installation
 
 ContGridModML can easily be installed using the Julia package manager.
-```julia
+```julia-repl
 julia> using Pkg
 julia> Pkg.add(url="https://github.com/laurentpagnier/ContGridMod.jl#FiniteElements")
 julia> Pkg.add(url="https://github.com/julianfritzsch/ContGridModML.jl")
@@ -19,12 +19,12 @@ julia> Pkg.add(url="https://github.com/julianfritzsch/ContGridModML.jl")
 
 To reproduce the results you only need to run two functions.
 The static paramaters, *i.e.*, the susceptances in ``x`` and ``y`` direction (``b_x(\mathbf{r})`` and ``b_y(\mathbf{r})``), can be learned by running
-```julia
+```julia-repl
 julia> sol = learn_susceptances()
 ```
 
 Similarly, to learn the dynamical parameters, *i.e.*, the inertia ``m(\mathbf{r})`` and the damping ``d(\mathbf{r})``, run
 
-```julia
+```julia-repl
 julia> sol = learn_dynamical_parameters()
 ```

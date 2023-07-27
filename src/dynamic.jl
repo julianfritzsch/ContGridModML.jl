@@ -95,28 +95,28 @@ function projectors_dynamic(cm::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real, 2},
     ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    q_proj = zeros(size(q_coords, 1), ndofs(cm.dh₂) ÷ 2)
     func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
     grid_coords = [node.x for node in cm.grid.nodes]
+    dofr = dof_range(cm.dh₂, :ω)
+    n_base_funcs = getnbasefunctions(cm.cellvalues)
+
+    q_proj = zeros(size(q_coords, 1), ndofs(cm.dh₂) ÷ 2)
     ω_proj = zeros(size(ω_idxs, 1), ndofs(cm.dh₂))
-    for (i, id) in enumerate(ω_idxs)
-        ph = PointEvalHandler(cm.grid, [Ferrite.Vec(dm.coord[id, :]...)], warn = :false)
+    for (i, point) in enumerate(eachrow(dm.coord[ω_idxs, :]))
+        ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)], warn = :false)
         if ph.cells[1] === nothing
-            min_ix = argmin([norm(coord .- Ferrite.Vec(dm.coord[id, :]...))
+            min_ix = argmin([norm(coord .- Ferrite.Vec(point...))
                              for coord in grid_coords])
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
-        dofr = dof_range(cm.dh₂, :ω)
         for j in 1:n_base_funcs
-            ω_proj[i, cell_dofs[dofr[j]]] = shape_value(pv, 1, j)
+            ω_proj[i, cell_dofs[dofr[j]]] = pv.N[j]
         end
     end
     omega_dofs = Set{Integer}()
-    dofr = dof_range(cm.dh₂, :ω)
     for i in 1:size(cm.grid.cells, 1)
         cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, i))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, i)
@@ -128,9 +128,8 @@ function projectors_dynamic(cm::ContGridMod.ContModel,
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            q_proj[i, odofs_dict[cell_dofs[dofr[j]]]] = shape_value(pv, 1, j)
+            q_proj[i, odofs_dict[cell_dofs[dofr[j]]]] = pv.N[j]
         end
     end
     return sparse(q_proj), sparse(ω_proj)

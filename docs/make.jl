@@ -5,6 +5,11 @@ makedocs(sitename = "ContGridModML",
     modules = [ContGridModML],
     pages = [
         "Introduction" => "index.md",
+        "Implementation" => [
+            "Finite Element Method" => "implementation/finite.md",
+            "General Implementation" => "implementation/general.md",
+            "Learn Susceptances" => "implementation/static.md",
+        ],
         "API" => [
             "Public" => "api/public.md",
             "Internal" => [
@@ -15,4 +20,4 @@ makedocs(sitename = "ContGridModML",
         ],
     ])
 
-deploydocs(repo = "github.com/julianfritzsch/ContGridModML.jl.git")
+deploydocs(repo = "github.com/julianfritzsch/ContGridModML.jl.git", devbranch = "dev")
