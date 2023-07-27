@@ -1,7 +1,7 @@
 name = "ContGridModML"
 uuid = "02f9a423-8698-42fc-984c-2fdcd96c33c3"
 authors = ["Julian Fritzsch <julian.fritzsch@etu.unige.ch>"]
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
