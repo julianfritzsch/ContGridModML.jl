@@ -160,7 +160,6 @@ function projectors_static(model::ContGridMod.ContModel,
     θ_proj = zeros(size(dm.th, 1), ndofs(model.dh₁))
     q_proj = zeros(size(q_coords, 1), ndofs(model.dh₁))
     q_proj_b = zeros(2 * size(q_coords, 1), 2 * ndofs(model.dh₁))
-    dofr = dof_range(model.dh₁, :u)
     func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
     grid_coords = [node.x for node in model.grid.nodes]
 
@@ -192,7 +191,7 @@ function projectors_static(model::ContGridMod.ContModel,
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            q_proj[i, cell_dofs[dofr[j]]] = shape_value(pv, 1, j)
+            q_proj[i, cell_dofs[j]] = shape_value(pv, 1, j)
             q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = shape_value(pv, 1, j)
             q_proj_b[2 * i, 2 * cell_dofs[j]] = shape_value(pv, 1, j)
         end
