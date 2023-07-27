@@ -157,30 +157,26 @@ The returned matrices are
 function projectors_static(model::ContGridMod.ContModel,
     dm::ContGridMod.DiscModel,
     q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
+    grid_coords = [node.x for node in model.grid.nodes]
+    n_base_funcs = getnbasefunctions(model.cellvalues)
     θ_proj = zeros(size(dm.th, 1), ndofs(model.dh₁))
     q_proj = zeros(size(q_coords, 1), ndofs(model.dh₁))
     q_proj_b = zeros(2 * size(q_coords, 1), 2 * ndofs(model.dh₁))
-    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
-    grid_coords = [node.x for node in model.grid.nodes]
 
-    for i in 1:size(dm.th, 1)
-        # The PointEvalHandler finds the cell in which the point is located
-        ph = PointEvalHandler(model.grid, [Ferrite.Vec(dm.coord[i, :]...)], warn = :false)
+    for (i, point) in enumerate(eachrow(dm.coord))
+        ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)], warn = :false)
         # If no cell is found (the point is outside the grid), use the closest grid point instead
         if ph.cells[1] === nothing
-            min_ix = argmin([norm(coord .- Ferrite.Vec(dm.coord[i, :]...))
+            min_ix = argmin([norm(coord .- Ferrite.Vec(point...))
                              for coord in grid_coords])
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
-        # Get the local coordinates
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        # The cell degrees of freedom so we know which nodal value to use
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            # Finally this uᵢ(x)
-            θ_proj[i, cell_dofs[j]] = shape_value(pv, 1, j)
+            θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
 
@@ -189,11 +185,10 @@ function projectors_static(model::ContGridMod.ContModel,
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        n_base_funcs = getnbasefunctions(pv)
         for j in 1:n_base_funcs
-            q_proj[i, cell_dofs[j]] = shape_value(pv, 1, j)
-            q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = shape_value(pv, 1, j)
-            q_proj_b[2 * i, 2 * cell_dofs[j]] = shape_value(pv, 1, j)
+            q_proj[i, cell_dofs[j]] = pv.N[j]
+            q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
+            q_proj_b[2 * i, 2 * cell_dofs[j]] = pv.N[j]
         end
     end
     return sparse(θ_proj), sparse(q_proj), sparse(q_proj_b)
