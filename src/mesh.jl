@@ -9,6 +9,8 @@ The file can be saved to a file if fileout is specified.
 function get_mesh(
     filein::String,
     dx::Real;
+    mesh_size_max::Real = 0.1,
+    algo::Int = 7,
     fileout::String="")::Tuple{Grid,Real}
 
     border, scale_factor = import_border(filein)
@@ -34,6 +36,10 @@ function get_mesh(
 
     # Synchronize the model
     gmsh.model.geo.synchronize()
+    
+    # Define algo and coarseness
+    gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
+    gmsh.model.mesh.set_algorithm(2, 1, algo) # dim = 2, assuming there's only one surface
 
     # Generate a 2D mesh
     gmsh.model.mesh.generate(2)
