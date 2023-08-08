@@ -233,6 +233,7 @@ end
 
 include("init.jl")
 include("mesh.jl")
+include("plot.jl")
 include("static.jl")
 include("tools.jl")
 include("dynamic.jl")
