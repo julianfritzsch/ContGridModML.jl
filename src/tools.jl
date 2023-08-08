@@ -8,7 +8,7 @@ Save a solution to a HDF5 file.
 function save_sol(fn::String, sol::ContSol)::Nothing
     tmp = sol_to_dict(sol)
     fid = h5open(fn, "w")
-    ContGridMod.dict_to_hdf5(tmp, fid)
+    dict_to_hdf5(tmp, fid)
     close(fid)
     return nothing
 end
@@ -20,7 +20,7 @@ Turn a static solution into a dictionary.
 """
 function static_to_dict(sol::StaticSol)::Dict{String, <:Any}
     re = Dict{String, Any}()
-    cm_dict = ContGridMod.cont_to_dict(sol.model)
+    cm_dict = cont_to_dict(sol.model)
     re["model"] = cm_dict
     re["type"] = "StaticSol"
     for key in fieldnames(StaticSol)
@@ -39,7 +39,7 @@ Turn a dynamic solution into a dictionary.
 """
 function dynamic_to_dict(sol::DynamicSol)::Dict{String, <:Any}
     re = Dict{String, Any}()
-    cm_dict = ContGridMod.cont_to_dict(sol.model)
+    cm_dict = cont_to_dict(sol.model)
     re["model"] = cm_dict
     re["type"] = "DynamicSol"
     for key in fieldnames(DynamicSol)
@@ -71,7 +71,7 @@ Load a solution from a HDF5 file.
 """
 function load_sol(fn::String)::ContSol
     fid = h5open(fn)
-    data = ContGridMod.hdf5_to_dict(fid)
+    data = hdf5_to_dict(fid)
     close(fid)
     return dict_to_sol(data)
 end
@@ -95,7 +95,7 @@ $(TYPEDSIGNATURES)
 Load a static solution from a dictionary.
 """
 function dict_to_static(data::Dict{String, <:Any})::StaticSol
-    data["model"] = ContGridMod.cont_from_dict(data["model"])
+    data["model"] = cont_from_dict(data["model"])
     return StaticSol((data[string(key)] for key in fieldnames(StaticSol))...)
 end
 
@@ -105,7 +105,7 @@ $(TYPEDSIGNATURES)
 Load a dynamic solution from a dictionary.
 """
 function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
-    data["model"] = ContGridMod.cont_from_dict(data["model"])
+    data["model"] = cont_from_dict(data["model"])
     return DynamicSol((data[string(key)] for key in fieldnames(DynamicSol))...)
 end
 

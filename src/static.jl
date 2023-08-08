@@ -9,9 +9,9 @@ function discrete_models(train_fn::String,
     test_fn::String,
     n_train::Integer,
     n_test::Integer,
-    scale_factor::Real)::Tuple{Vector{ContGridMod.DiscModel}, Vector{ContGridMod.DiscModel}}
-    training = ContGridMod.DiscModel[]
-    test = ContGridMod.DiscModel[]
+    scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
+    training = DiscModel[]
+    test = DiscModel[]
     for i in 1:n_train
         push!(training, load_discrete_model(train_fn * string(i) * ".h5", scale_factor))
     end
@@ -26,8 +26,8 @@ $(TYPEDSIGNATURES)
 
 Check if all the slack buses in the training and test data sets are the same.
 """
-function check_slack(training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel})::Bool
+function check_slack(training::Vector{DiscModel},
+    test::Vector{DiscModel})::Bool
     slack = training[1].id_slack
     re = false
     for i in 2:size(training, 1)
@@ -44,9 +44,9 @@ $(TYPEDSIGNATURES)
 
 Assemble the force vectors for the static solutions.
 """
-function assemble_f_static(model::ContGridMod.ContModel,
-    training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel},
+function assemble_f_static(model::ContModel,
+    training::Vector{DiscModel},
+    test::Vector{DiscModel},
     Af::SparseMatrixCSC,
     q_proj::SparseMatrixCSC;
     tf::Real = 0.05,
@@ -73,8 +73,8 @@ $(TYPEDSIGNATURES)
 Assemble all the ground truth data into one matrix for the training and one for the test
 sets.
 """
-function assemble_disc_theta(training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+function assemble_disc_theta(training::Vector{DiscModel},
+    test::Vector{DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
     t_train = zeros(size(training[1].th, 1), size(training, 1))
     t_test = zeros(size(test[1].th, 1), size(test, 1))
 
@@ -102,7 +102,7 @@ The returned matrices are
 - `q_coords` Coordinates of the quadrature points in the same order as stored in
     the DoF-handler
 """
-function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
+function assemble_matrices_static(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -154,8 +154,8 @@ The returned matrices are
 - `q_proj_b` project the susceptances onto the quadrature points. The susceptances need to 
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
-function projectors_static(model::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function projectors_static(model::ContModel,
+    dm::DiscModel,
     q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
     func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
     grid_coords = [node.x for node in model.grid.nodes]

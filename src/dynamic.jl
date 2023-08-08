@@ -15,7 +15,7 @@ The matrices returned are
 - `q_coords` Coordinates of all quadrature points in the same order as stored in the 
     DoF-handler
 """
-function assemble_matrices_dynamic(model::ContGridMod.ContModel)::Tuple{
+function assemble_matrices_dynamic(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -91,8 +91,8 @@ Returned projectors
 - `ω_proj` Project the nodal values onto the given comparison points. This is used to
     calculate the loss function.
 """
-function projectors_dynamic(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function projectors_dynamic(cm::ContModel,
+    dm::DiscModel,
     q_coords::Array{<:Real, 2},
     ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
     func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
@@ -140,8 +140,8 @@ $(TYPEDSIGNATURES)
 
 Assemble all the force vectors for the dynamical simulations.
 """
-function assemble_f_dynamic(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function assemble_f_dynamic(cm::ContModel,
+    dm::DiscModel,
     fault_ix::Vector{<:Integer},
     dP::Union{Real, Vector{<:Real}},
     Af::SparseMatrixCSC,
@@ -173,8 +173,8 @@ of the test and training set are not eligible for comparison and are remove from
 possible indices. The number of points can be controlled by `n`, which gives the number of
 points in the largest dimension.
 """
-function generate_comp_idxs(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function generate_comp_idxs(cm::ContModel,
+    dm::DiscModel,
     tri::Vector{<:Integer},
     tei::Vector{<:Integer},
     n::Int)::Vector{<:Integer}
@@ -206,7 +206,7 @@ $(TYPEDSIGNATURES)
 
 Randomly choose generators for the training and test sets.
 """
-function gen_idxs(dm::ContGridMod.DiscModel,
+function gen_idxs(dm::DiscModel,
     dP::Real,
     n_train::Integer,
     n_test::Int;
@@ -226,7 +226,7 @@ $(TYPEDSIGNATURES)
 
 Run a dynamical simulation of the discrete model.
 """
-function disc_dyn(dm::ContGridMod.DiscModel,
+function disc_dyn(dm::DiscModel,
     fault_node::Integer,
     fault_size::Real,
     dt::Real,
@@ -270,7 +270,7 @@ $(TYPEDSIGNATURES)
 
 Create the initial conditions for the continuous simulations.
 """
-function initial_conditions(cm::ContGridMod.ContModel)::Vector{<:Real}
+function initial_conditions(cm::ContModel)::Vector{<:Real}
     stable_sol!(cm)
     ch = ConstraintHandler(cm.dh₂)
     db = Dirichlet(:θ, Set(1:getnnodes(cm.grid)), (x, t) -> cm.θ₀(x))
@@ -321,7 +321,7 @@ $(TYPEDSIGNATURES)
 Calculate the eigenvectors of the unweighted Laplacian of the grid used for the continuous
     simulations.
 """
-function lap_eigenvectors(cm::ContGridMod.ContModel)::Array{<:Real, 2}
+function lap_eigenvectors(cm::ContModel)::Array{<:Real, 2}
     N = ndofs(cm.dh₁)
     lap = zeros(N, N)
     for cell in CellIterator(cm.dh₁)
@@ -347,7 +347,7 @@ eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by project
 results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
 set to zero.
 """
-function init_expansion(cm::ContGridMod.ContModel,
+function init_expansion(cm::ContModel,
     eve::Array{<:Real, 2},
     n_modes::Integer,
     n_coeffs::Integer)::Tuple{Vector{<:Real}, Array{<:Real, 2}}
