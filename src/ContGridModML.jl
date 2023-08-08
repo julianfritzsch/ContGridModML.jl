@@ -4,6 +4,7 @@ using LinearAlgebra
 using Ferrite
 using FerriteGmsh
 using FerriteViz
+using CairoMakie
 using Gmsh
 using SparseArrays
 using Flux
