@@ -227,6 +227,7 @@ mutable struct ContModel <: GridModel
 end
 
 include("init.jl")
+include("mesh.jl")
 include("static.jl")
 include("tools.jl")
 include("dynamic.jl")
