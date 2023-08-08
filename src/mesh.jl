@@ -1,4 +1,4 @@
-export get_grid
+export get_mesh
 
 """
     get_grid(filein::String, dx::Real[, fileout::String=""])::Tuple{Grid,Real}

@@ -1,4 +1,4 @@
-export get_params, load_discrete_model, integrate, interpolate
+export init_model, load_discrete_model, integrate, interpolate
 
 """
     bb(dm::DiscModel, x::Union{Vector{<:Real},Tensor{1,2,<:Real}}, σ::Real, bfactor::Real)::Vector{<:Real}
