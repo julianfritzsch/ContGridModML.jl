@@ -277,7 +277,7 @@ by using the liear approximation provided by the finite element method.
 function run_learn_susceptances(;
     train_fn::String = MODULE_FOLDER * "/data/ml/training_",
     test_fn::String = MODULE_FOLDER * "/data/ml/test_",
-    grid_fn::String = MODULE_FOLDER * "/data/panta.msh",
+    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
     n_train::Int = 48,
     n_test::Int = 12,
     n_epochs::Int = 10000,
@@ -290,10 +290,10 @@ function run_learn_susceptances(;
     δ = 0.5
 )::StaticSol
     
-    grid, scale_factor = get_grid(grid_fn)
+    mesh, scale_factor = get_mesh(mesh_fn)
     train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
     @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
-    model = get_params(grid, tf, train[1], κ = κ, σ = σ)
+    model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
     Af, Ak, dim, q_coords = assemble_matrices_static(model)
     
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)

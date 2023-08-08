@@ -1,6 +1,9 @@
 module ContGridModML
 
 using Ferrite
+using FerriteGmsh
+using FerriteViz
+using Gmsh
 using SparseArrays
 using Flux
 using Random
