@@ -199,24 +199,25 @@ $(TYPEDSIGNATURES)
 
 Do the actual learning of the parameters.
 """
-function susceptances(A::AbstractSparseMatrix,
+function learn_susceptances(A::AbstractSparseMatrix,
     dim::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
-    f_train::Array{<:Real, 2},
-    t_train::Array{<:Real, 2},
+    f_train::Matrix{<:Real},
+    t_train::Matrix{<:Real},
     b::Vector{<:Real},
     n_epochs::Integer,
     n_batches::Int;
+    opt = ADAM(0.1),
     bmin::Real = 0.1,
-    seed::Union{Integer, Nothing} = nothing,
-    δ::Real = 1.0)::Tuple{Vector{<:Real}, Array{<:Real, 2}}
-    opt = ADAM(0.1)
+    rng::AbstractRNG = Xoshiro(),
+    δ::Real = 1.0)::Tuple{Vector{<:Real}, Matrix{<:Real}}
+    
     param = Flux.params(b)
     n_train = size(f_train, 2)
-    @assert mod(n_train, n_batches)==0 "The number of batches must be a divisor of the number of training cases."
+    @assert mod(n_train, n_batches) == 0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batches)
-    rng = Xoshiro(seed)
+    
     shuffled_ix = randperm(rng, n_train)
     losses = zeros(n_epochs, n_batches)
     n_q = size(q_proj, 1)
@@ -269,12 +270,11 @@ by using the liear approximation provided by the finite element method.
     distribution
 - `σ::Real = 0.01`: Standard deviation for the initial Gaussian distribution of the
     parameters
-- `seed::Union{Nothing, Integer} = 1709`: Seed for the ranom selection of batches and the
-    initial guess of ``b_x`` and ``b_y``
+- `rng::AbstractRNG = Xoshiro()`: Random number generator used to draw all random numbers
 - `bmin::Real = 0.1`: Minimimum value of the suscpetances
 - `δ = 0.5`: Parameter of the Huber loss function
 """
-function learn_susceptances(;
+function run_learn_susceptances(;
     train_fn::String = MODULE_FOLDER * "/data/ml/training_",
     test_fn::String = MODULE_FOLDER * "/data/ml/test_",
     grid_fn::String = MODULE_FOLDER * "/data/panta.msh",
@@ -285,15 +285,19 @@ function learn_susceptances(;
     tf::Real = 0.05,
     κ::Real = 0.02,
     σ::Real = 0.01,
-    seed::Union{Nothing, Integer} = 1709,
+    rng::AbstractRNG = Xoshiro(),
     bmin::Real = 0.1,
-    δ = 0.5)::StaticSol
+    δ = 0.5
+)::StaticSol
+    
     grid, scale_factor = get_grid(grid_fn)
     train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
     @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
     model = get_params(grid, tf, train[1], κ = κ, σ = σ)
     Af, Ak, dim, q_coords = assemble_matrices_static(model)
+    
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
+    
     f_train, f_test = assemble_f_static(model,
         train,
         test,
@@ -302,10 +306,12 @@ function learn_susceptances(;
         tf = tf,
         σ = σ,
         κ = κ)
+        
     t_train, t_test = assemble_disc_theta(train, test)
-    rng = Xoshiro(seed)
+    
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
-    b, losses = susceptances(Ak,
+    
+    b, losses = learn_susceptances(Ak,
         dim,
         q_proj_b,
         θ_proj,
@@ -316,11 +322,15 @@ function learn_susceptances(;
         n_batches,
         bmin = bmin,
         seed = seed)
+        
     K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
+    
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
     train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
+    
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
+    
     return StaticSol(b,
         losses,
         train_pred,
@@ -338,9 +348,9 @@ $(TYPEDSIGNATURES)
 Obtain the prediction of the stable solution for the training and test data sets.
 """
 function prediction(K::AbstractSparseMatrix,
-    f_train::Array{<:Real, 2},
-    f_test::Array{<:Real, 2},
-    proj::AbstractSparseMatrix)::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+    f_train::Matrix{<:Real},
+    f_test::Matrix{<:Real},
+    proj::AbstractSparseMatrix)::Tuple{Matrix{<:Real}, Matrix{<:Real}}
     return proj * (K \ f_train), proj * (K \ f_test)
 end
 
@@ -349,10 +359,10 @@ $(TYPEDSIGNATURES)
 
 Obtain the loss values for the training and test data sets.
 """
-function get_losses(train_pred::Array{<:Real, 2},
-    test_pred::Array{<:Real, 2},
-    t_train::Array{<:Real, 2},
-    t_test::Array{<:Real, 2};
+function get_losses(train_pred::Matrix{<:Real},
+    test_pred::Matrix{<:Real},
+    t_train::Matrix{<:Real},
+    t_test::Matrix{<:Real};
     δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
     train_losses = vcat(Flux.huber_loss(train_pred,
         t_train,
