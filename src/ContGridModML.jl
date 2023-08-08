@@ -1,5 +1,6 @@
 module ContGridModML
 
+using LinearAlgebra
 using Ferrite
 using FerriteGmsh
 using FerriteViz
