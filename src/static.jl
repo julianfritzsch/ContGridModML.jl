@@ -210,7 +210,7 @@ function learn_susceptances(A::AbstractSparseMatrix,
     n_batches::Int;
     opt = ADAM(0.1),
     bmin::Real = 0.1,
-    rng::AbstractRNG = Xoshiro(),
+    rng::AbstractRNG = Xoshiro(123),
     δ::Real = 1.0)::Tuple{Vector{<:Real}, Matrix{<:Real}}
     
     param = Flux.params(b)
@@ -285,7 +285,7 @@ function run_learn_susceptances(;
     tf::Real = 0.05,
     κ::Real = 0.02,
     σ::Real = 0.01,
-    rng::AbstractRNG = Xoshiro(),
+    rng::AbstractRNG = Xoshiro(123),
     bmin::Real = 0.1,
     δ = 0.5
 )::StaticSol
