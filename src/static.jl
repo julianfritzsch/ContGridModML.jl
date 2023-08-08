@@ -321,7 +321,7 @@ function run_learn_susceptances(;
         n_epochs,
         n_batches,
         bmin = bmin,
-        seed = seed)
+        rng = rng)
         
     K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
     
