@@ -213,7 +213,9 @@ function learn_susceptances(A::AbstractSparseMatrix,
     rng::AbstractRNG = Xoshiro(123),
     δ::Real = 1.0)::Tuple{Vector{<:Real}, Matrix{<:Real}}
     
-    param = Flux.params(b)
+    beta = log.(max.(b, bmin))
+    
+    param = Flux.params(beta)
     n_train = size(f_train, 2)
     @assert mod(n_train, n_batches) == 0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batches)
@@ -225,7 +227,7 @@ function learn_susceptances(A::AbstractSparseMatrix,
         for batch in 1:n_batches
             local loss
             gs = Flux.gradient(param) do
-                btemp = max.(b, bmin)
+                b = exp.(beta)
                 K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + dim
                 θ = proj * (K \ f_train[:,
                     shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]])
@@ -235,13 +237,13 @@ function learn_susceptances(A::AbstractSparseMatrix,
                     delta = δ)
             end
             losses[e, batch] = loss
-            if (mod(e, 50) == 0 && batch == 3)
+            if (mod(e, 50) == 0 && batch == 1)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
             Flux.update!(opt, param, gs)
         end
     end
-    return max.(b, 0.1), losses
+    return max.(exp.(beta), bmin), losses
 end
 
 """

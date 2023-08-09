@@ -51,7 +51,7 @@ function init_model(
     push!(dh₂, :θ, 1)
     push!(dh₂, :ω, 1)
     close!(dh₂)
-    ip = Lagrange{2,RefTetrahedron,1}()
+    ip = Lagrange{2,RefTetrahedron,1}() # 2D tetrahedron -> triangle
     qr = QuadratureRule{2,RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
 
