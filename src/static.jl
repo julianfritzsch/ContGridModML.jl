@@ -228,7 +228,7 @@ function learn_susceptances(A::AbstractSparseMatrix,
             local loss
             gs = Flux.gradient(param) do
                 b = exp.(beta)
-                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + dim
+                K = A * sparse(1:n_q, 1:n_q, q_proj * b) * A' + dim
                 θ = proj * (K \ f_train[:,
                     shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]])
                 loss = Flux.huber_loss(θ,
