@@ -1,12 +1,28 @@
 export get_mesh
 
+
+
+function get_mesh(
+    file::String;
+    kwargs...)::Tuple{Grid,Real}
+    if(contains(file, ".json"))
+        get_mesh_from_json(file, kwargs...)
+    elseif(contains(file, ".msh"))
+        get_mesh_from_mesh(file, kwargs...)
+    else
+        error("This type of file is not supported.")
+    end
+end
+
+
 """
     get_grid(filein::String, dx::Real[, fileout::String=""])::Tuple{Grid,Real}
 
 Generate a grid using Gmsh from a json file containing the border coordinates.
 The file can be saved to a file if fileout is specified.
 """
-function get_mesh(
+
+function get_mesh_from_json(
     filein::String;
     mesh_size::Real = 0.0,
     mesh_size_max::Real = 0.1,
@@ -72,7 +88,7 @@ end
 
 Load a grid from a gmsh file. The file needs to contain a field ScaleFactor.
 """
-function get_mesh(
+function get_mesh_from_mesh(
     file::String
 )::Tuple{Grid,Real}
     grid = togrid(file)
