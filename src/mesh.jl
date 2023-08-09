@@ -7,8 +7,8 @@ Generate a grid using Gmsh from a json file containing the border coordinates.
 The file can be saved to a file if fileout is specified.
 """
 function get_mesh(
-    filein::String,
-    dx::Real;
+    filein::String;
+    mesh_size::Real = 0.0,
     mesh_size_max::Real = 0.1,
     algo::Int = 7,
     fileout::String="")::Tuple{Grid,Real}
@@ -21,7 +21,7 @@ function get_mesh(
 
     # Add the points
     for i in eachindex(border[:, 1])
-        gmsh.model.geo.add_point(border[i, :]..., 0, dx, i)
+        gmsh.model.geo.add_point(border[i, :]..., 0, mesh_size, i)
     end
 
     # Add the lines
