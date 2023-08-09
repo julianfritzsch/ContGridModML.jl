@@ -288,6 +288,7 @@ function run_learn_susceptances(;
     κ::Real = 0.02,
     σ::Real = 0.01,
     rng::AbstractRNG = Xoshiro(123),
+    opt = ADAM(0.1),
     bmin::Real = 0.1,
     δ = 0.5
 )::StaticSol
