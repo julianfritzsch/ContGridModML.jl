@@ -103,14 +103,16 @@ function init_model(
     function by₀(x, _)
         return bb(dm, x, σ, bfactor)[2]
     end
-    @time d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
+    d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
     d = normalize_values!(d, sum(dm.d_load) + sum(dm.d_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
-    @time m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)
+    m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)
     m = normalize_values!(m, sum(dm.m_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
-    @time p = diffusion(dh₁, cellvalues, grid, p₀, tf, κ)
+    p = diffusion(dh₁, cellvalues, grid, p₀, tf, κ)
     p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode="off")
-    @time bx = diffusion(dh₁, cellvalues, grid, bx₀, tf, κ)
-    @time by = diffusion(dh₁, cellvalues, grid, by₀, tf, κ)
+    #bx = diffusion(dh₁, cellvalues, grid, bx₀, tf, κ)
+    #by = diffusion(dh₁, cellvalues, grid, by₀, tf, κ)
+    bx = ones(size(m))
+    by = ones(size(m))
     bx .= max.(bx, bmin)
     by .= max.(by, bmin)
 
