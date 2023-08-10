@@ -12,7 +12,7 @@ end
 
 function nodal_plot(
     model::ContModel,
-    val::Vector{<:Real};
+    val::Vector{Real};
     logarithmic::Bool=false,
     colormap::Symbol = :inferno,
     colorbar::Bool = true,
