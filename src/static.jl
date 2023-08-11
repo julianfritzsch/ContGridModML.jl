@@ -281,7 +281,8 @@ function run_learn_susceptances(;
     f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ  = κ)
     f_test = assemble_f_static(model, test, Af, q_proj, tf = tf, σ = σ, κ  = κ)
         
-    t_train, t_test = assemble_disc_theta(train, test)
+    th_train = assemble_disc_theta(train)
+    th_test = assemble_disc_theta(test)
     
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
     
