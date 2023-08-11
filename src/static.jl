@@ -352,7 +352,8 @@ function prediction(K::AbstractSparseMatrix,
     f_train::Matrix{<:Real},
     f_test::Matrix{<:Real},
     proj::AbstractSparseMatrix)::Tuple{Matrix{<:Real}, Matrix{<:Real}}
-    return proj * (K \ f_train), proj * (K \ f_test)
+    #return proj * (K \ f_train), proj * (K \ f_test)
+    return (K \ f_train), (K \ f_test)
 end
 
 """
