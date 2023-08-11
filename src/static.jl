@@ -19,7 +19,7 @@ function load_discrete_models(foldername::String,
     scale_factor::Real)::Vector{DiscModel}
     dms = DiscModel[]
     for fn in joinpath.(foldername, readdir(foldername))
-        push!(training, load_discrete_model(fn, scale_factor))
+        push!(dms, load_discrete_model(fn, scale_factor))
     end
     return dms
 end
@@ -31,7 +31,7 @@ $(TYPEDSIGNATURES)
 Check if all the slack buses in the training and test data sets are the same.
 """
 function check_slack(dataset::Vector{DiscModel})::Bool
-    unique(dataset |> d -> d.id_slack) |> length == 1
+    unique(dataset .|> d -> d.id_slack) |> length == 1
 end
 
 """
@@ -40,26 +40,20 @@ $(TYPEDSIGNATURES)
 Assemble the force vectors for the static solutions.
 """
 function assemble_f_static(model::ContModel,
-    training::Vector{DiscModel},
-    test::Vector{DiscModel},
+    dataset::Vector{DiscModel},
     Af::SparseMatrixCSC,
     q_proj::SparseMatrixCSC;
     tf::Real = 0.05,
     κ::Real = 1.0,
     σ::Real = 0.01)::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
-    f_train = zeros(ndofs(model.dh₁), size(training, 1))
-    f_test = zeros(ndofs(model.dh₁), size(test, 1))
+    f = zeros(ndofs(model.dh₁), length(dataset))
 
-    for i in 1:size(training, 1)
-        update_model!(model, :p, training[i], tf, κ = κ, σ = σ)
+    for (i, dm) in enumerate(dataset)
+        update_model!(model, :p, dm, tf, κ = κ, σ = σ)
         f_train[:, i] = Af * q_proj * model.p_nodal
     end
-    for i in 1:size(test, 1)
-        update_model!(model, :p, test[i], tf, κ = κ, σ = σ)
-        f_test[:, i] = Af * q_proj * model.p_nodal
-    end
-
-    return f_train, f_test
+    
+    return f
 end
 
 """
@@ -68,18 +62,8 @@ $(TYPEDSIGNATURES)
 Assemble all the ground truth data into one matrix for the training and one for the test
 sets.
 """
-function assemble_disc_theta(training::Vector{DiscModel},
-    test::Vector{DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
-    t_train = zeros(size(training[1].th, 1), size(training, 1))
-    t_test = zeros(size(test[1].th, 1), size(test, 1))
-
-    for i in 1:size(training, 1)
-        t_train[:, i] = training[i].th
-    end
-    for i in 1:size(test, 1)
-        t_test[:, i] = test[i].th
-    end
-    return t_train, t_test
+function assemble_disc_theta(dataset::Vector{DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+    th = reduce(hcat, dataset .|> d.th)
 end
 
 """
