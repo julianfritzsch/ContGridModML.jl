@@ -62,7 +62,7 @@ $(TYPEDSIGNATURES)
 Assemble all the ground truth data into one matrix for the training and one for the test
 sets.
 """
-function assemble_disc_theta(dataset::Vector{DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+function assemble_disc_theta(dataset::Vector{DiscModel})::Matrix{<:Real}
     return reduce(hcat, dataset .|> d.th)
 end
 
