@@ -50,7 +50,7 @@ function assemble_f_static(model::ContModel,
 
     for (i, dm) in enumerate(dataset)
         update_model!(model, :p, dm, tf, κ = κ, σ = σ)
-        f_train[:, i] = Af * q_proj * model.p_nodal
+        f[:, i] = Af * q_proj * model.p_nodal
     end
     
     return f
@@ -182,15 +182,16 @@ function learn_susceptances(A::AbstractSparseMatrix,
     dim::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
-    f_train::Matrix{<:Real},
-    t_train::Matrix{<:Real},
-    b::Vector{<:Real},
+    f_train::Matrix{T},
+    t_train::Matrix{T},
+    b::Vector{T},
     n_epochs::Integer,
     n_batches::Int;
     opt = ADAM(0.1),
     bmin::Real = 0.1,
     rng::AbstractRNG = Xoshiro(123),
-    δ::Real = 1.0)::Tuple{Vector{<:Real}, Matrix{<:Real}}
+    δ::Real = 1.0
+)::Tuple{Vector{T}, Matrix{T}} where T<:Real
     
     param = Flux.params(b)
     n_train = size(f_train, 2)
