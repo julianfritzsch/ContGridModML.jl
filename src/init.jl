@@ -40,7 +40,7 @@ function init_model(
     u_min::Real=0.1,
     σ::Real=0.01,
     bfactor::Real=1.0,
-    bmin::Real=1000.0
+    bmin::Real=1.0
 )::ContModel
 
     # Create the dof handler and interpolation functions
@@ -97,12 +97,12 @@ function init_model(
         end
         return re
     end
-    function bx₀(x, _)
-        return bb(dm, x, σ, bfactor)[1]
-    end
-    function by₀(x, _)
-        return bb(dm, x, σ, bfactor)[2]
-    end
+    #function bx₀(x, _)
+    #    return bb(dm, x, σ, bfactor)[1]
+    #end
+    #function by₀(x, _)
+    #    return bb(dm, x, σ, bfactor)[2]
+    #end
     d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
     d = normalize_values!(d, sum(dm.d_load) + sum(dm.d_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
     m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)

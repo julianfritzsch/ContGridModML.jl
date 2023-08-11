@@ -291,7 +291,7 @@ function run_learn_susceptances(;
     δ = 0.5
 )::StaticSol
     
-    @time mesh, scale_factor = get_mesh(mesh_fn)
+    mesh, scale_factor = get_mesh(mesh_fn)
     train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
     @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
