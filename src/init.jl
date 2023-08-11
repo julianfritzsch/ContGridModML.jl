@@ -224,7 +224,7 @@ function diffusion(dh::DofHandler, cellvalues::CellScalarValues, grid::Grid, f::
 
     odefun = ODEFunction(dif!, mass_matrix=M, jac_prototype=K)
     problem = ODEProblem(odefun, u₀, (0.0, tf))
-    sol = solve(problem, Trapezoid(), reltol=1e-5, abstol=1e-7)
+    sol = solve(problem, RadauIIA5(), reltol=1e-5, abstol=1e-7)
     return sol.u[end]
 end
 
