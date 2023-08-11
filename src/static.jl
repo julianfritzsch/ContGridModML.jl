@@ -63,7 +63,7 @@ Assemble all the ground truth data into one matrix for the training and one for 
 sets.
 """
 function assemble_disc_theta(dataset::Vector{DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
-    th = reduce(hcat, dataset .|> d.th)
+    return reduce(hcat, dataset .|> d.th)
 end
 
 """
@@ -254,11 +254,9 @@ by using the liear approximation provided by the finite element method.
 - `δ = 0.5`: Parameter of the Huber loss function
 """
 function run_learn_susceptances(;
-    train_fn::String = MODULE_FOLDER * "/data/ml/training_",
-    test_fn::String = MODULE_FOLDER * "/data/ml/test_",
+    train_folder::String = MODULE_FOLDER * "/data/ml/train",
+    test_folder::String = MODULE_FOLDER * "/data/ml/test",
     mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
-    n_train::Int = 48,
-    n_test::Int = 12,
     n_epochs::Int = 10000,
     n_batches::Int = 3,
     tf::Real = 0.05,
@@ -271,21 +269,16 @@ function run_learn_susceptances(;
 )::StaticSol
     
     mesh, scale_factor = get_mesh(mesh_fn)
-    train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
+    train = load_discrete_models(train_folder, scale_factor)
+    test = load_discrete_models(test_folder, scale_factor)
     @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
     Af, Ak, dim, q_coords = assemble_matrices_static(model)
     
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
     
-    f_train, f_test = assemble_f_static(model,
-        train,
-        test,
-        Af,
-        q_proj,
-        tf = tf,
-        σ = σ,
-        κ = κ)
+    f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ  = κ)
+    f_test = assemble_f_static(model, test, Af, q_proj, tf = tf, σ = σ, κ  = κ)
         
     t_train, t_test = assemble_disc_theta(train, test)
     
