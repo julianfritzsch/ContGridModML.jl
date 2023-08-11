@@ -31,7 +31,7 @@ $(TYPEDSIGNATURES)
 Check if all the slack buses in the training and test data sets are the same.
 """
 function check_slack(dataset::Vector{DiscModel})::Bool
-    unique(dataset |> -> d.id_slack) |> length == 1
+    unique(dataset |> d -> d.id_slack) |> length == 1
 end
 
 """
