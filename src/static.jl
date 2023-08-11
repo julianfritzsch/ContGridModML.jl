@@ -45,7 +45,7 @@ function assemble_f_static(model::ContModel,
     q_proj::SparseMatrixCSC;
     tf::Real = 0.05,
     κ::Real = 1.0,
-    σ::Real = 0.01)::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+    σ::Real = 0.01)::Matrix{<:Real}
     f = zeros(ndofs(model.dh₁), length(dataset))
 
     for (i, dm) in enumerate(dataset)
@@ -285,17 +285,8 @@ function run_learn_susceptances(;
     
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
     
-    b, losses = learn_susceptances(Ak,
-        dim,
-        q_proj_b,
-        θ_proj,
-        f_train,
-        t_train,
-        binit,
-        n_epochs,
-        n_batches,
-        bmin = bmin,
-        rng = rng)
+    b, losses = learn_susceptances(Ak, dim, q_proj_b, θ_proj, f_train,
+        t_train, binit, n_epochs, n_batches, bmin = bmin, rng = rng)
         
     K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
     
@@ -306,15 +297,8 @@ function run_learn_susceptances(;
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
     
-    return StaticSol(b,
-        losses,
-        train_pred,
-        test_pred,
-        t_train,
-        t_test,
-        train_losses,
-        test_losses,
-        model)
+    return StaticSol(b, losses, train_pred, test_pred, t_train, t_test,
+        train_losses, test_losses, model)
 end
 
 """
