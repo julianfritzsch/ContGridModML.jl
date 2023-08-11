@@ -327,7 +327,8 @@ function run_learn_susceptances(;
     K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
     
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
-    train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
+    #train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
+    train_losses, test_losses = zeros(2), zeros(2)
     
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
