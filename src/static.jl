@@ -5,38 +5,33 @@ $(TYPEDSIGNATURES)
 
 Load all the discrete models for the training and test data sets.
 """
-function discrete_models(train_fn::String,
-    test_fn::String,
+function discrete_models(train_folder::String,
+    test_folder::String,
     n_train::Integer,
     n_test::Integer,
     scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
-    training = DiscModel[]
-    test = DiscModel[]
-    for i in 1:n_train
-        push!(training, load_discrete_model(train_fn * string(i) * ".h5", scale_factor))
-    end
-    for i in 1:n_test
-        push!(test, load_discrete_model(test_fn * string(i) * ".h5", scale_factor))
-    end
+    training = load_discrete_models(train_folder, scale_factor)
+    test = load_discrete_models(test_folder, scale_factor)
     return training, test
 end
+
+function load_discrete_models(foldername::String,
+    scale_factor::Real)::Vector{DiscModel}
+    dms = DiscModel[]
+    for fn in joinpath.(foldername, readdir(foldername))
+        push!(training, load_discrete_model(fn, scale_factor))
+    end
+    return dms
+end
+
 
 """
 $(TYPEDSIGNATURES)
 
 Check if all the slack buses in the training and test data sets are the same.
 """
-function check_slack(training::Vector{DiscModel},
-    test::Vector{DiscModel})::Bool
-    slack = training[1].id_slack
-    re = false
-    for i in 2:size(training, 1)
-        re = training[i].id_slack == slack
-    end
-    for i in 1:size(test, 1)
-        re = test[i].id_slack == slack
-    end
-    return re
+function check_slack(dataset::Vector{DiscModel})::Bool
+    unique(dataset |> -> d.id_slack) |> length == 1
 end
 
 """

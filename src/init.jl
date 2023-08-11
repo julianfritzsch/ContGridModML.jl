@@ -1,31 +1,5 @@
 export init_model, load_discrete_model, integrate, interpolate
 
-"""
-    bb(dm::DiscModel, x::Union{Vector{<:Real},Tensor{1,2,<:Real}}, σ::Real, bfactor::Real)::Vector{<:Real}
-
-Get the susceptance in the continuous model at point x. This function basically puts a Gauss distribution around the lines.
-"""
-function bb(dm::DiscModel, x::Union{Vector{<:Real},Tensor{1,2,<:Real}}, σ::Real, bfactor::Real)::Vector{<:Real}
-    ds = dm.coord[dm.id_line[:, 2], :] .- dm.coord[dm.id_line[:, 1], :]
-    re = zeros(2)
-    for (i, row) in enumerate(eachrow(ds))
-        if norm(row) == 0
-            continue
-        end
-        b = dm.b[i] * row / norm(row) / bfactor
-        t = (row[1] * (x[1] - dm.coord[dm.id_line[i, 1], 1]) + row[2] * (x[2] - dm.coord[dm.id_line[i, 1], 2])) / norm(row)^2
-        dist = 0
-        if 0 ≤ t ≤ 1
-            dist = norm(x .- (dm.coord[dm.id_line[i, 1], :] .+ t * row))
-        elseif t < 0
-            dist = norm(x .- dm.coord[dm.id_line[i, 1], :])
-        else
-            dist = norm(x .- dm.coord[dm.id_line[i, 2], :])
-        end
-        re .+= abs.(b / (σ^2 * 2 * π) * exp(-0.5 * dist^2 / σ^2))
-    end
-    return re
-end
 
 """
     get_params(grid::Grid, tf::Real, dm::DiscModel; κ::Real=1.0, u_min::Real=0.1, σ::Real=0.01, bfactor::Real=1.0, bmin::Real=1000.)::ContModel
