@@ -18,7 +18,7 @@ function nodal_plot(
     decorations::Bool = false,
     fig_args::Dict{Symbol,Any} = Dict{Symbol,Any}(),
     ax_args::Dict{Symbol,Any} = Dict{Symbol,Any}(),
-    cbar_args=Dict{Symbol,Any} = Dict{Symbol,Any}()
+    cbar_args::Dict{Symbol,Any} = Dict{Symbol,Any}()
 )::Figure
     f = Figure(; fig_args...)
     ax = Axis(f[1, 1]; ax_args...)
