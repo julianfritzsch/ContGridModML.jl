@@ -167,7 +167,7 @@ function projectors_static(model::ContModel,
 
     for (i, point) in enumerate(eachrow(q_coords))
         ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         for j in 1:getnbasefunctions(model.cellvalues)
