@@ -20,7 +20,7 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
-    Array{<:Real, 2},
+    Matrix{<:Real},
 }
     K_const = create_sparsity_pattern(model.dh₂)
     M_const = create_sparsity_pattern(model.dh₂)
@@ -93,8 +93,9 @@ Returned projectors
 """
 function projectors_dynamic(cm::ContModel,
     dm::DiscModel,
-    q_coords::Array{<:Real, 2},
-    ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
+    q_coords::Matrix{<:Real},
+    ω_idxs::Vector{<:Integer}
+)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
     func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
     grid_coords = [node.x for node in cm.grid.nodes]
     dofr = dof_range(cm.dh₂, :ω)
@@ -146,7 +147,8 @@ function assemble_f_dynamic(cm::ContModel,
     dP::Union{Real, Vector{<:Real}},
     Af::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
-    σ::Real)::Array{<:Real, 2}
+    σ::Real
+)::Matrix{<:Real}
     @assert size(fault_ix) == size(dP)||isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
         dP = dP .* ones(size(fault_ix, 1))
@@ -474,9 +476,10 @@ Update the parameters using a restricted gradient descent to ensure positiveness
 """
 function update(p::Vector{<:Real},
     g::Vector{<:Real},
-    eve::Array{<:Real, 2},
+    eve::Matrix{<:Real},
     i::Integer,
-    f::Function)::Vector{<:Real}
+    f::Function
+)::Vector{<:Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)

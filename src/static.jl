@@ -96,7 +96,7 @@ function assemble_matrices_static(model::ContModel)::Tuple{
     Ak = spzeros(n_dofs, 2 * n_quad * n_cell)
     id_slack = model.ch.prescribed_dofs[1]
     ix = 1
-    for cell in CellIterator(model.dh₁)
+    for (j, cell) in enumerate(CellIterator(model.dh₁))
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
         for q in 1:getnquadpoints(model.cellvalues)
@@ -157,7 +157,6 @@ function projectors_static(model::ContModel,
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
-        println(pv)
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         for j in 1:n_base_funcs
@@ -192,8 +191,8 @@ function learn_susceptances(
     f_train::Matrix{T},
     t_train::Matrix{T},
     b::Vector{T},
-    n_epochs::Integer,
-    n_batches::Int;
+    n_epoch::Integer,
+    n_batch::Int;
     opt = ADAM(0.1),
     bmin::Real = 0.1,
     rng::AbstractRNG = Xoshiro(123),
@@ -205,23 +204,20 @@ function learn_susceptances(
     @assert mod(n_train, n_batches) == 0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batches)
     
-    shuffled_ix = randperm(rng, n_train)
-    losses = zeros(n_epochs, n_batches)
+    losses = zeros(n_epoch, n_batch)
     n_q = size(q_proj, 1)
-    for e in 1:n_epochs
-        for batch in 1:n_batches
+    for e in 1:n_epoch
+        shuffled_ix = randperm(rng, n_train)
+        for k in 1:n_batch
+            batch = shuffled_ix[((k - 1) * batch_size + 1):(k * batch_size)]
             local loss
             gs = Flux.gradient(param) do
                 btemp = max.(b, bmin)
                 K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + dim
-                θ = proj * (K \ f_train[:,
-                    shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]])
-                loss = Flux.huber_loss(θ,
-                    t_train[:,
-                        shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]],
-                    delta = δ)
+                θ = proj * (K \ f_train[:,batch])
+                loss = Flux.huber_loss(θ, t_train[:,batch], delta = δ)
             end
-            losses[e, batch] = loss
+            losses[e, K] = loss
             if (mod(e, 50) == 0 && batch == 1)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
@@ -265,8 +261,8 @@ function run_learn_susceptances(;
     train_folder::String = MODULE_FOLDER * "/data/ml/train",
     test_folder::String = MODULE_FOLDER * "/data/ml/test",
     mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
-    n_epochs::Int = 10000,
-    n_batches::Int = 3,
+    n_epoch::Int = 10000,
+    n_batch::Int = 3,
     tf::Real = 0.05,
     κ::Real = 0.02,
     σ::Real = 0.01,
@@ -280,9 +276,9 @@ function run_learn_susceptances(;
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
     @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
+    
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
     Af, Ak, dim, q_coords = assemble_matrices_static(model)
-    
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
     
     f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ  = κ)
