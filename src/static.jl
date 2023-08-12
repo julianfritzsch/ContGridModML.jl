@@ -63,7 +63,7 @@ Assemble all the ground truth data into one matrix for the training and one for 
 sets.
 """
 function assemble_disc_theta(dataset::Vector{DiscModel})::Matrix{<:Real}
-    return reduce(hcat, dataset .|> d.th)
+    return reduce(hcat, dataset .|> d -> d.th)
 end
 
 """
@@ -85,41 +85,42 @@ function assemble_matrices_static(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
-    Array{<:Real, 2},
+    Matrix{<:Real},
 }
-    q_coords = zeros(getnquadpoints(model.cellvalues) * size(model.grid.cells, 1), 2)
-    Af = zeros(ndofs(model.dh₁),
-        getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    Ak = zeros(ndofs(model.dh₁),
-        2 * getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
+    n_cell = length(model.grid.cells)
+    n_quad = getnquadpoints(model.cellvalues)
+    n_dofs = ndofs(model.dh₁)
 
-    n_basefuncs = getnbasefunctions(model.cellvalues)
-    ix_af = 1
-    ix_ak = 1
+    q_coords = zeros(n_quad * n_cell, 2)
+    Af = spzeros(n_dofs, n_quad * n_cell)
+    Ak = spzeros(n_dofs, 2 * n_quad * n_cell)
+    id_slack = model.ch.prescribed_dofs[1]
+    ix = 1
     for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
-        for q_point in 1:getnquadpoints(model.cellvalues)
-            x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
-            dΩ = getdetJdV(model.cellvalues, q_point)
-            q_coords[ix_af, :] = x
-            for i in 1:n_basefuncs
-                φᵢ = shape_value(model.cellvalues, q_point, i)
-                ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                Af[dofs[i], ix_af] = φᵢ * dΩ
-                Ak[dofs[i], ix_ak:(ix_ak + 1)] = ∇φᵢ * sqrt(dΩ)
+        for q in 1:getnquadpoints(model.cellvalues)
+            dΩ = getdetJdV(model.cellvalues, q)
+            q_coords[j, :] = spatial_coordinate(model.cellvalues,
+                q, getcoordinates(cell))
+            for i in 1:getnbasefunctions(model.cellvalues)
+                φᵢ = shape_value(model.cellvalues, q, i)
+                ∇φᵢ = shape_gradient(model.cellvalues, q, i)
+                # Enforce slack bus, see below
+                if dofs[i] != id_slack
+                    Af[dofs[i], ix] = φᵢ * dΩ
+                    Ak[dofs[i], 2*ix-1:2*ix] = ∇φᵢ * sqrt(dΩ)
+                end
             end
-            ix_af += 1
-            ix_ak += 2
+            ix += 1
         end
     end
-    # Enforce slack bus
-    Ak[model.ch.prescribed_dofs, :] .= 0.0
-    Af[model.ch.prescribed_dofs, :] .= 0.0
-    # Dim is the matrix containing only the one on the diagonal for the slack bus to make sure that the linear equations will have a unique solution
-    dim = zeros(ndofs(model.dh₁), ndofs(model.dh₁))
-    dim[model.ch.prescribed_dofs, model.ch.prescribed_dofs] .= 1
-    return sparse(Af), sparse(Ak), sparse(dim), q_coords
+    # Dim is the matrix containing only the one on the diagonal for the slack
+    # bus to make sure that the linear equations will have a unique solution
+    dim = spzeros(n_dofs, n_dofs)
+    dim[[id_slack], [id_slack]] .= 1
+    
+    return Af, Ak, dim, q_coords
 end
 
 """
@@ -135,23 +136,28 @@ The returned matrices are
 """
 function projectors_static(model::ContModel,
     dm::DiscModel,
-    q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
-    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
+    q_coords::Matrix{<:Real}
+)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
-    n_base_funcs = getnbasefunctions(model.cellvalues)
-    θ_proj = zeros(size(dm.th, 1), ndofs(model.dh₁))
-    q_proj = zeros(size(q_coords, 1), ndofs(model.dh₁))
-    q_proj_b = zeros(2 * size(q_coords, 1), 2 * ndofs(model.dh₁))
+    #n_base_funcs = getnbasefunctions(model.cellvalues)
+    n_dofs = ndofs(model.dh₁)
+    θ_proj = spzeros(dm.Nbus, n_dofs)
+    q_proj = spzeros(size(q_coords, 1), n_dofs)
+    q_proj_b = spzeros(2 * size(q_coords, 1), 2 * n_dofs)
 
     for (i, point) in enumerate(eachrow(dm.coord))
-        ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)], warn = :false)
-        # If no cell is found (the point is outside the grid), use the closest grid point instead
+        point = Ferrite.Vec(point...)
+        ph = PointEvalHandler(model.grid, [point], warn = :false)
+        # If no cell is found (the point is outside the grid),
+        # use the closest grid point instead
         if ph.cells[1] === nothing
-            min_ix = argmin([norm(coord .- Ferrite.Vec(point...))
-                             for coord in grid_coords])
+            min_ix = argmin([norm(coord .- point)
+                for coord in grid_coords])
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
+        println(pv)
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
         for j in 1:n_base_funcs
@@ -164,13 +170,13 @@ function projectors_static(model::ContModel,
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        for j in 1:n_base_funcs
+        for j in 1:getnbasefunctions(model.cellvalues)
             q_proj[i, cell_dofs[j]] = pv.N[j]
             q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
             q_proj_b[2 * i, 2 * cell_dofs[j]] = pv.N[j]
         end
     end
-    return sparse(θ_proj), sparse(q_proj), sparse(q_proj_b)
+    return θ_proj, q_proj, q_proj_b
 end
 
 """
@@ -178,7 +184,8 @@ $(TYPEDSIGNATURES)
 
 Do the actual learning of the parameters.
 """
-function learn_susceptances(A::AbstractSparseMatrix,
+function learn_susceptances(
+    A::AbstractSparseMatrix,
     dim::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
