@@ -190,7 +190,7 @@ function _learn_susceptances(
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
     f_train::Matrix{T},
-    t_train::Matrix{T},
+    th_train::Matrix{T},
     b::Vector{T},
     n_epoch::Integer,
     n_batch::Int;
@@ -216,10 +216,10 @@ function _learn_susceptances(
                 btemp = max.(b, bmin)
                 K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
                 θ = proj * (K \ f_train[:,batch])
-                loss = Flux.huber_loss(θ, t_train[:,batch], delta = δ)
+                loss = Flux.huber_loss(θ, th_train[:,batch], delta = δ)
             end
             losses[e, k] = loss
-            if (mod(e, 50) == 0 && batch == 1)
+            if (mod(e, 50) == 0 && k == 1)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
             Flux.update!(opt, param, gs)
@@ -302,7 +302,7 @@ function learn_susceptances(;
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
     
-    return StaticSol(b, losses, train_pred, test_pred, t_train, t_test,
+    return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
         train_losses, test_losses, model)
 end
 
