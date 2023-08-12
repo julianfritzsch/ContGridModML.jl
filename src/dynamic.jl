@@ -323,7 +323,7 @@ $(TYPEDSIGNATURES)
 Calculate the eigenvectors of the unweighted Laplacian of the grid used for the continuous
     simulations.
 """
-function lap_eigenvectors(cm::ContModel)::Array{<:Real, 2}
+function lap_eigenvectors(cm::ContModel)::Matrix{<:Real}
     N = ndofs(cm.dh₁)
     lap = zeros(N, N)
     for cell in CellIterator(cm.dh₁)
@@ -350,9 +350,9 @@ results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_c
 set to zero.
 """
 function init_expansion(cm::ContModel,
-    eve::Array{<:Real, 2},
+    eve::Matrix{<:Real},
     n_modes::Integer,
-    n_coeffs::Integer)::Tuple{Vector{<:Real}, Array{<:Real, 2}}
+    n_coeffs::Integer)::Tuple{Vector{<:Real}, Matrix{<:Real}}
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
@@ -384,7 +384,8 @@ function simul(disc_sol::ODESolution,
     u₀::Vector{<:Real},
     tf::Real;
     cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{<:Real}, Real}
+    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()
+)::Tuple{Vector{<:Real}, Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)

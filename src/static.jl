@@ -10,9 +10,9 @@ function discrete_models(train_folder::String,
     n_train::Integer,
     n_test::Integer,
     scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
-    training = load_discrete_models(train_folder, scale_factor)
+    train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
-    return training, test
+    return train, test
 end
 
 function load_discrete_models(foldername::String,
@@ -81,7 +81,8 @@ The returned matrices are
 - `q_coords` Coordinates of the quadrature points in the same order as stored in
     the DoF-handler
 """
-function assemble_matrices_static(model::ContModel)::Tuple{
+function assemble_matrices_static(model::ContModel
+)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -115,12 +116,12 @@ function assemble_matrices_static(model::ContModel)::Tuple{
             ix += 1
         end
     end
-    # Dim is the matrix containing only the one on the diagonal for the slack
+    # Islack is the matrix containing only the one on the diagonal for the slack
     # bus to make sure that the linear equations will have a unique solution
-    dim = spzeros(n_dofs, n_dofs)
-    dim[[id_slack], [id_slack]] .= 1
+    Islack = spzeros(n_dofs, n_dofs)
+    Islack[[id_slack], [id_slack]] .= 1
     
-    return Af, Ak, dim, q_coords
+    return Af, Ak, Islack, q_coords
 end
 
 """
@@ -185,7 +186,7 @@ Do the actual learning of the parameters.
 """
 function learn_susceptances(
     A::AbstractSparseMatrix,
-    dim::AbstractSparseMatrix,
+    Islack::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
     f_train::Matrix{T},
@@ -213,7 +214,7 @@ function learn_susceptances(
             local loss
             gs = Flux.gradient(param) do
                 btemp = max.(b, bmin)
-                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + dim
+                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
                 θ = proj * (K \ f_train[:,batch])
                 loss = Flux.huber_loss(θ, t_train[:,batch], delta = δ)
             end
@@ -278,7 +279,7 @@ function run_learn_susceptances(;
     @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
     
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
-    Af, Ak, dim, q_coords = assemble_matrices_static(model)
+    Af, Ak, Islack, q_coords = assemble_matrices_static(model)
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
     
     f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ  = κ)
@@ -289,10 +290,10 @@ function run_learn_susceptances(;
     
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
     
-    b, losses = learn_susceptances(Ak, dim, q_proj_b, θ_proj, f_train,
+    b, losses = learn_susceptances(Ak, Islack, q_proj_b, θ_proj, f_train,
         t_train, binit, n_epochs, n_batches, bmin = bmin, rng = rng)
         
-    K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
+    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
     #train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)

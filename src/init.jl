@@ -10,11 +10,11 @@ function init_model(
     grid::Grid,
     tf::Real,
     dm::DiscModel;
-    κ::Real=1.0,
-    u_min::Real=0.1,
-    σ::Real=0.01,
-    bfactor::Real=1.0,
-    bmin::Real=1.0
+    κ::Real = 1.0,
+    u_min::Real = 0.1,
+    σ::Real = 0.01,
+    bfactor::Real = 1.0,
+    bmin::Real = 1.0
 )::ContModel
 
     # Create the dof handler and interpolation functions
@@ -29,8 +29,6 @@ function init_model(
     qr = QuadratureRule{2,RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
 
-    # Get the area of the grid
-    area = integrate(dh₁, cellvalues, (x) -> 1)
 
     # Create initial condition functions for diffusion process
     function d₀(x, _)
@@ -77,12 +75,16 @@ function init_model(
     #function by₀(x, _)
     #    return bb(dm, x, σ, bfactor)[2]
     #end
+    
+    # Get the area of the grid
+    area = integrate(dh₁, cellvalues, (x) -> 1)
+    
     d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
     d = normalize_values!(d, sum(dm.d_load) + sum(dm.d_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
     m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)
     m = normalize_values!(m, sum(dm.m_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
     p = diffusion(dh₁, cellvalues, grid, p₀, tf, κ)
-    p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode="off")
+    p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode= :off)
     #bx = diffusion(dh₁, cellvalues, grid, bx₀, tf, κ)
     #by = diffusion(dh₁, cellvalues, grid, by₀, tf, κ)
     bx = ones(size(m))
@@ -230,7 +232,15 @@ end
 
 Interpolate values from the continues model from a  coordinate. If the given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Tensor{1,2,<:Real}, grid::Grid, dh::DofHandler, u::Vector{<:Real}, fname::Symbol; off::Real=0.0, factor::Real=1.0, extrapolate::Bool=true, warn::Symbol=:semi)::Real
+function interpolate(x::Tensor{1,2,<:Real},
+    grid::Grid, dh::DofHandler,
+    u::Vector{<:Real},
+    fname::Symbol;
+    off::Real = 0.0,
+    factor::Real = 1.0,
+    extrapolate::Bool = true,
+    warn::Symbol = :semi
+)::Real
     ph = PointEvalHandler(grid, [x], warn=(warn == :all))
     if isnan(get_point_values(ph, dh, u, fname)[1])
         if extrapolate
@@ -252,7 +262,16 @@ end
 
 Interpolate values from the continues model from a vector of coordinates. If a given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Vector{Tensor{1,2,<:Real}}, grid::Grid, dh::DofHandler, u::Vector{<:Real}, fname::Symbol; off::Real=0.0, factor::Real=1.0, extrapolate::Bool=true, warn::Symbol=:semi)::Vector{<:Real}
+function interpolate(x::Vector{Tensor{1,2,<:Real}},
+    grid::Grid,
+    dh::DofHandler,
+    u::Vector{<:Real},
+    fname::Symbol;
+    off::Real = 0.0,
+    factor::Real = 1.0,
+    extrapolate::Bool = true,
+    warn::Symbol = :semi
+)::Vector{<:Real}
     ph = PointEvalHandler(grid, x, warn=(warn == :all))
     re = get_point_values(ph, dh, u, fname)
     nan_ix = findall(isnan.(re))
@@ -275,15 +294,25 @@ end
 
 Normalize nodal values over the given area. There are two methods: "factor" rescales everything by a common factor, "off" adds an offset to normalize.
 """
-function normalize_values!(u::Vector{<:Real}, value::Real, area::Real, grid::Grid, dh::DofHandler, cellvalues::CellScalarValues; mode::String="factor")::Vector{<:Real}
+function normalize_values!(
+    u::Vector{<:Real},
+    value::Real,
+    area::Real,
+    grid::Grid,
+    dh::DofHandler,
+    cellvalues::CellScalarValues;
+    mode::Symbol = :factor
+)::Vector{<:Real}
     utot = integrate(dh, cellvalues, x -> interpolate(x, grid, dh, u, :u))
     ch = ConstraintHandler(dh)
-    if mode[1] == 'f'
-        d = Dirichlet(:u, Set(1:getnnodes(grid)), (x, t) -> interpolate(x, grid, dh, u, :u, factor=(value / utot)))
-    elseif mode[1] == 'o'
-        d = Dirichlet(:u, Set(1:getnnodes(grid)), (x, t) -> interpolate(x, grid, dh, u, :u, off=(value - utot) / area))
+    if mode == :factor
+        d = Dirichlet(:u, Set(1:getnnodes(grid)),
+            (x, t) -> interpolate(x, grid, dh, u, :u, factor = (value / utot)))
+    elseif mode == :off
+        d = Dirichlet(:u, Set(1:getnnodes(grid)),
+            (x, t) -> interpolate(x, grid, dh, u, :u, off = (value - utot) / area))
     else
-        throw(ArgumentError("Mode must be \"factor\" or \"off\""))
+        throw(ArgumentError("Mode must be :factor or :off"))
     end
     add!(ch, d)
     close!(ch)
