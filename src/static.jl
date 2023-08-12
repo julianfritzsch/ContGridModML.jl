@@ -328,14 +328,11 @@ function get_losses(train_pred::Matrix{<:Real},
     test_pred::Matrix{<:Real},
     t_train::Matrix{<:Real},
     t_test::Matrix{<:Real};
-    δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
-    train_losses = vcat(Flux.huber_loss(train_pred,
-        t_train,
-        delta = δ,
+    δ::Real = 1.0
+)::Tuple{Vector{<:Real}, Vector{<:Real}}
+    train_losses = vcat(Flux.huber_loss(train_pred, t_train, delta = δ,
         agg = x -> mean(x, dims = 1))...)
-    test_losses = vcat(Flux.huber_loss(test_pred,
-        t_test,
-        delta = δ,
+    test_losses = vcat(Flux.huber_loss(test_pred, t_test, delta = δ,
         agg = x -> mean(x, dims = 1))...)
     return train_losses, test_losses
 end

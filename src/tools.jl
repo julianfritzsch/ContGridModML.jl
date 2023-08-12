@@ -195,7 +195,7 @@ function update_model!(
             return re
         end
         p = diffusion(model.dh₁, model.cellvalues, model.grid, p₀, tf, κ)
-        p = normalize_values!(p, 0.0, area, model.grid, model.dh₁, model.cellvalues, mode="off")
+        p = normalize_values!(p, 0.0, area, model.grid, model.dh₁, model.cellvalues, mode= :off)
         update_model!(model, u_name, p)
     elseif u_name == :bx
         function bx₀(x, _)
