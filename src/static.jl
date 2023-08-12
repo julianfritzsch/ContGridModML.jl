@@ -291,7 +291,7 @@ function learn_susceptances(;
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
     
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, θ_proj, f_train,
-        th_train, binit, n_epochs, n_batches, bmin = bmin, rng = rng)
+        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
         
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     
