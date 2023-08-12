@@ -202,8 +202,8 @@ function _learn_susceptances(
     
     param = Flux.params(b)
     n_train = size(f_train, 2)
-    @assert mod(n_train, n_batches) == 0 "The number of batches must be a divisor of the number of training cases."
-    batch_size = Int(n_train / n_batches)
+    @assert mod(n_train, n_batch) == 0 "The number of batches must be a divisor of the number of training cases."
+    batch_size = Int(n_train / n_batch)
     
     losses = zeros(n_epoch, n_batch)
     n_q = size(q_proj, 1)
