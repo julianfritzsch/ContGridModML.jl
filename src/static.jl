@@ -160,7 +160,7 @@ function projectors_static(model::ContModel,
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        for j in 1:n_base_funcs
+        for j in 1:getnbasefunctions(model.cellvalues)
             θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
