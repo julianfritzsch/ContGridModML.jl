@@ -218,7 +218,7 @@ function _learn_susceptances(
                 θ = proj * (K \ f_train[:,batch])
                 loss = Flux.huber_loss(θ, t_train[:,batch], delta = δ)
             end
-            losses[e, K] = loss
+            losses[e, k] = loss
             if (mod(e, 50) == 0 && batch == 1)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
