@@ -184,7 +184,7 @@ $(TYPEDSIGNATURES)
 
 Do the actual learning of the parameters.
 """
-function learn_susceptances(
+function _learn_susceptances(
     A::AbstractSparseMatrix,
     Islack::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
@@ -258,7 +258,7 @@ by using the liear approximation provided by the finite element method.
 - `bmin::Real = 0.1`: Minimimum value of the suscpetances
 - `δ = 0.5`: Parameter of the Huber loss function
 """
-function run_learn_susceptances(;
+function learn_susceptances(;
     train_folder::String = MODULE_FOLDER * "/data/ml/train",
     test_folder::String = MODULE_FOLDER * "/data/ml/test",
     mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
@@ -290,7 +290,7 @@ function run_learn_susceptances(;
     
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
     
-    b, losses = learn_susceptances(Ak, Islack, q_proj_b, θ_proj, f_train,
+    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, θ_proj, f_train,
         t_train, binit, n_epochs, n_batches, bmin = bmin, rng = rng)
         
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
