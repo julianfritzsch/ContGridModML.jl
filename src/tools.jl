@@ -1,4 +1,4 @@
-export save_sol, load_sol
+export save_sol, load_sol, load_discrete_model
 
 """
 $(TYPEDSIGNATURES)
@@ -426,3 +426,99 @@ function model_to_dict(model::GridModel)::Dict{String,<:Any}
 end
 
 
+"""
+    load_discrete_model(dataname::String, scaling_factor::Float64)::DiscModel
+
+Load a discrete model from a file and rescale the coordinates to match the continuous model.
+"""
+function load_discrete_model(
+    dataname::String,
+    scaling_factor::Float64
+)::DiscModel
+    if(contains(dataname, ".h5"))
+        load_discrete_modelfrom_hdf5(dataname, scaling_factor)
+    elseif(contains(dataname, ".json"))
+        load_discrete_model_from_powermodels(dataname, scaling_factor)
+    else
+        error("Couldn't read $dataname")
+end
+
+function load_discrete_model_from_hdf5(
+    dataname::String,
+    scaling_factor::Float64
+)::DiscModel
+    data = h5read(dataname, "/")
+    coord = albers_projection(data["bus_coord"] ./ (180 / pi))
+    coord ./= scaling_factor
+    dm = DiscModel(
+        vec(data["gen_inertia"]),
+        vec(data["gen_prim_ctrl"]),
+        Int64.(vec(data["gen"][:, 1])),
+        findall(vec(data["bus"][:, 2]) .== 3)[1],
+        coord,
+        vec(data["load_freq_coef"]),
+        Int64.(data["branch"][:, 1:2]),
+        1.0 ./ data["branch"][:, 4],
+        vec(data["bus"][:, 3]) / 100.0,
+        vec(data["bus"][:, 9]) / 180.0 * pi,
+        vec(data["gen"][:, 2]) / 100.0,
+        vec(data["gen"][:, 9]) / 100.0,
+        size(data["bus"], 1),
+        size(data["gen"], 1),
+        size(data["branch"], 1),
+    )
+    return dm
+end
+
+
+function load_discrete_model_from_powermodels(
+    dataname::String,
+    scaling_factor::Float64
+)::DiscModel
+    data = JSON3.read("europe.json")
+    bus_label = Dict{Int, Int}()
+    inertia, gen_prim_ctrl, theta, pmax = Float64[], Float64[], Float64[], Float64[]
+    pg, va, susceptance = Float64[], Float64[], Float64[]
+    id_gen, id_load = Int[], Int[]
+    id_branch = Vector{Int}[]
+    coord = Vector{Float64}[]
+    id_slack = 0
+
+    for (i,(s, bus)) in enumerate(data[:bus])
+        bus_label[parse(Int,"$s")] = i
+        push!(coord, bus[:coord])
+        if bus[:bus_type] == 3
+            id_slack = i
+        end
+        push!(va, bus[:va] / 180.0 * pi)
+    end 
+
+    for (i, gen) in data[:gen]
+        push!(inertia, gen[:inertia])
+        push!(gen_prim_ctrl, gen[:primary])
+        push!(id_gen, bus_label[gen[:gen_bus]])
+        bus_label[gen[:gen_bus]] 
+        push!(pg, gen[:pg])
+        push!(pmax, gen[:pmax])
+    end
+      
+    p_load = zeros(length(data[:bus]))
+    load_freq_coef = zeros(length(data[:bus]))
+    for (i, load) in data[:load]
+        id_load = bus_label[load[:load_bus]]
+        p_load[id_load] += load[:pd]
+        load_freq_coef[id_load] += load[:load_coefficient]
+    end
+        
+    for (i, branch) in data[:branch]
+        push!(susceptance, 1.0 / branch[:br_x])
+        push!(id_branch, [bus_label[branch[:f_bus]], bus_label[branch[:t_bus]]])
+    end 
+
+    id_branch = Matrix(reduce(hcat, id_branch)')
+    coord = Matrix(reduce(hcat, coord)')
+
+    dm = DiscModel(inertia, gen_prim_ctrl, id_gen, id_slack, coord,
+        load_freq_coef, id_branch, susceptance, p_load, va, pg,
+        pmax, length(data[:bus]), length(data[:gen]), length(data[:branch]))
+end
