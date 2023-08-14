@@ -17,6 +17,8 @@ using JuMP
 using Gurobi
 using Base.Threads
 using DocStringExtensions
+using PowerModels
+using JSON3
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
 
