@@ -296,8 +296,7 @@ function learn_susceptances(;
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
-    #train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
-    train_losses, test_losses = zeros(2), zeros(2)
+    train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
     
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
@@ -315,8 +314,7 @@ function prediction(K::AbstractSparseMatrix,
     f_train::Matrix{<:Real},
     f_test::Matrix{<:Real},
     proj::AbstractSparseMatrix)::Tuple{Matrix{<:Real}, Matrix{<:Real}}
-    #return proj * (K \ f_train), proj * (K \ f_test)
-    return (K \ f_train), (K \ f_test)
+    return proj * (K \ f_train), proj * (K \ f_test)
 end
 
 """
