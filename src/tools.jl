@@ -436,7 +436,7 @@ function load_discrete_model(
     scaling_factor::Float64
 )::DiscModel
     if(contains(dataname, ".h5"))
-        load_discrete_modelfrom_hdf5(dataname, scaling_factor)
+        load_discrete_model_from_hdf5(dataname, scaling_factor)
     elseif(contains(dataname, ".json"))
         load_discrete_model_from_powermodels(dataname, scaling_factor)
     else
