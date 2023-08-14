@@ -441,6 +441,7 @@ function load_discrete_model(
         load_discrete_model_from_powermodels(dataname, scaling_factor)
     else
         error("Couldn't read $dataname")
+    end
 end
 
 function load_discrete_model_from_hdf5(
