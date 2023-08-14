@@ -94,8 +94,7 @@ Returned projectors
 function projectors_dynamic(cm::ContModel,
     dm::DiscModel,
     q_coords::Matrix{<:Real},
-    ω_idxs::Vector{<:Integer}
-)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
+    ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
     func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
     grid_coords = [node.x for node in cm.grid.nodes]
     dofr = dof_range(cm.dh₂, :ω)
@@ -147,8 +146,7 @@ function assemble_f_dynamic(cm::ContModel,
     dP::Union{Real, Vector{<:Real}},
     Af::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
-    σ::Real
-)::Matrix{<:Real}
+    σ::Real)::Matrix{<:Real}
     @assert size(fault_ix) == size(dP)||isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
         dP = dP .* ones(size(fault_ix, 1))
@@ -384,8 +382,7 @@ function simul(disc_sol::ODESolution,
     u₀::Vector{<:Real},
     tf::Real;
     cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()
-)::Tuple{Vector{<:Real}, Real}
+    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{<:Real}, Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
@@ -479,8 +476,7 @@ function update(p::Vector{<:Real},
     g::Vector{<:Real},
     eve::Matrix{<:Real},
     i::Integer,
-    f::Function
-)::Vector{<:Real}
+    f::Function)::Vector{<:Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)

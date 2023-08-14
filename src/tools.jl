@@ -109,11 +109,6 @@ function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
     return DynamicSol((data[string(key)] for key in fieldnames(DynamicSol))...)
 end
 
-
-
-
-
-
 """
     update_model!(model::ContModel, u_name::Symbol, u::Vector{<:Real})::Nothing
 
@@ -124,7 +119,15 @@ function update_model!(model::ContModel, u_name::Symbol, u::Vector{<:Real})::Not
         throw(DimensionMismatch("The size of the vector does not match the number of nodes."))
     end
     setproperty!(model, Symbol(string(u_name) * "_nodal"), u)
-    setproperty!(model, u_name, (x; extrapolate=true, warn=:semi) -> interpolate(x, model.grid, model.dh₁, u, :u, extrapolate=extrapolate, warn=warn))
+    setproperty!(model,
+        u_name,
+        (x; extrapolate = true, warn = :semi) -> interpolate(x,
+            model.grid,
+            model.dh₁,
+            u,
+            :u,
+            extrapolate = extrapolate,
+            warn = warn))
     return nothing
 end
 
@@ -133,43 +136,46 @@ end
 
 Update the continuous model from a discrete model. The paramter are distributed using a diffusion procees (similar to the get_params function)
 """
-function update_model!(
-    model::ContModel,
+function update_model!(model::ContModel,
     u_name::Symbol,
     dm::DiscModel,
     tf::Real;
-    κ::Real=1.0,
-    u_min::Real=0.1,
-    σ::Real=0.01,
-    bfactor::Real=1.0,
-    bmin::Real=1000.0
-)::Nothing
+    κ::Real = 1.0,
+    u_min::Real = 0.1,
+    σ::Real = 0.01,
+    bfactor::Real = 1.0,
+    bmin::Real = 1000.0)::Nothing
 
     ## This whole function and the get_params should be refactored ##
     area = integrate(model.dh₁, model.cellvalues, (x) -> 1)
     if u_name == :d
         function d₀(x, _)
             re = 0
-            for i in 1:dm.Ngen
+            for i in 1:(dm.Ngen)
                 if dm.p_gen == 0
                     continue
                 end
                 dif = x .- dm.coord[dm.id_gen[i], :]
                 re += dm.d_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
             end
-            for i in 1:dm.Nbus
+            for i in 1:(dm.Nbus)
                 dif = x .- dm.coord[i, :]
                 re += dm.d_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
             end
             return max(re, u_min)
         end
         d = diffusion(model.dh₁, model.cellvalues, model.grid, d₀, tf, κ)
-        d = normalize_values!(d, sum(dm.d_load) + sum(dm.d_gen[dm.p_gen.>0]), area, model.grid, model.dh₁, model.cellvalues)
+        d = normalize_values!(d,
+            sum(dm.d_load) + sum(dm.d_gen[dm.p_gen .> 0]),
+            area,
+            model.grid,
+            model.dh₁,
+            model.cellvalues)
         update_model!(model, u_name, d)
     elseif u_name == :m
         function m₀(x, _)
             re = 0
-            for i in 1:dm.Ngen
+            for i in 1:(dm.Ngen)
                 if dm.p_gen[i] == 0
                     continue
                 end
@@ -179,23 +185,34 @@ function update_model!(
             return max(re, u_min)
         end
         m = diffusion(model.dh₁, model.cellvalues, model.grid, m₀, tf, κ)
-        m = normalize_values!(m, sum(dm.m_gen[dm.p_gen.>0]), area, model.grid, model.dh₁, model.cellvalues)
+        m = normalize_values!(m,
+            sum(dm.m_gen[dm.p_gen .> 0]),
+            area,
+            model.grid,
+            model.dh₁,
+            model.cellvalues)
         update_model!(model, u_name, m)
     elseif u_name == :p
         function p₀(x, _)
             re = 0
-            for i in 1:dm.Ngen
+            for i in 1:(dm.Ngen)
                 dif = x .- dm.coord[dm.id_gen[i], :]
                 re += dm.p_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
             end
-            for i in 1:dm.Nbus
+            for i in 1:(dm.Nbus)
                 dif = x .- dm.coord[i, :]
                 re -= dm.p_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
             end
             return re
         end
         p = diffusion(model.dh₁, model.cellvalues, model.grid, p₀, tf, κ)
-        p = normalize_values!(p, 0.0, area, model.grid, model.dh₁, model.cellvalues, mode= :off)
+        p = normalize_values!(p,
+            0.0,
+            area,
+            model.grid,
+            model.dh₁,
+            model.cellvalues,
+            mode = :off)
         update_model!(model, u_name, p)
     elseif u_name == :bx
         function bx₀(x, _)
@@ -222,14 +239,12 @@ end
 Apply the Albers projection to a vector of coordinates. The coordinates need to be given as latitude, longitude.
 See https://en.wikipedia.org/wiki/Albers_projection
 """
-function albers_projection(
-    coord::Array{<:Real,2};
-    lon0::Real=13.37616 / 180 * pi,
-    lat0::Real=46.94653 / 180 * pi,
-    lat1::Real=10 / 180 * pi,
-    lat2::Real=50 / 180 * pi,
-    R::Real=6371.0
-)::Array{<:Real,2}
+function albers_projection(coord::Array{<:Real, 2};
+    lon0::Real = 13.37616 / 180 * pi,
+    lat0::Real = 46.94653 / 180 * pi,
+    lat1::Real = 10 / 180 * pi,
+    lat2::Real = 50 / 180 * pi,
+    R::Real = 6371.0)::Array{<:Real, 2}
     n = 1 / 2 * (sin(lat1) + sin(lat2))
     theta = n * (coord[:, 2] .- lon0)
     c = cos(lat1)^2 + 2 * n * sin(lat1)
@@ -246,14 +261,12 @@ end
 Import border from a json file, apply the Albers projection and rescale it such that the longest dimension is 1.
 The coordinates need to be given as latitude, longitude.
 """
-function import_border(
-    filename::String
-)::Tuple{Array{<:Real,2},<:Real}
+function import_border(filename::String)::Tuple{Array{<:Real, 2}, <:Real}
     data = JSON.parsefile(filename)
     N = size(data["border"], 1)
 
     b = zeros(N, 2)
-    for i = 1:N
+    for i in 1:N
         b[i, 1] = data["border"][i][1] / 180 * pi
         b[i, 2] = data["border"][i][2] / 180 * pi
     end
@@ -263,10 +276,8 @@ function import_border(
     end
 
     b = albers_projection(b)
-    scale_factor = max(
-        maximum(b[:, 1]) - minimum(b[:, 1]),
-        maximum(b[:, 2]) - minimum(b[:, 2])
-    )
+    scale_factor = max(maximum(b[:, 1]) - minimum(b[:, 1]),
+        maximum(b[:, 2]) - minimum(b[:, 2]))
     return b / scale_factor, scale_factor
 end
 
@@ -275,10 +286,8 @@ end
 
 Save a continuous or discrete model to a hdf5 file.
 """
-function save_model(
-    fn::String,
-    model::GridModel
-)::Nothing
+function save_model(fn::String,
+    model::GridModel)::Nothing
     tmp = model_to_dict(model)
     fid = h5open(fn, "w")
     dict_to_hdf5(tmp, fid)
@@ -297,16 +306,14 @@ function load_model(fn::String)::GridModel
     if data["model"] == "ContModel"
         return cont_from_dict(data)
     elseif data["model"] == "DiscModel"
-        return DiscModel(
-            (data[string(key)] for key in fieldnames(DiscModel))...
-        )
+        return DiscModel((data[string(key)] for key in fieldnames(DiscModel))...)
     else
         throw(ArgumentError("The provided file does not have a model entry matching ContModel or DiscModel"))
     end
 end
 
-function hdf5_to_dict(fid::HDF5.H5DataStore)::Dict{String,<:Any}
-    re = Dict{String,Any}()
+function hdf5_to_dict(fid::HDF5.H5DataStore)::Dict{String, <:Any}
+    re = Dict{String, Any}()
     for k in keys(fid)
         if typeof(fid[k]) === HDF5.Dataset
             re[k] = read(fid[k])
@@ -329,8 +336,9 @@ function dict_to_hdf5(data::Dict, fid::HDF5.H5DataStore)::Nothing
     return nothing
 end
 
-function cont_from_dict(data::Dict{String,<:Any})::ContModel
-    cells = [Cell{data["grid"]["celltype"]...}(Tuple(x)) for x in eachrow(data["grid"]["cells"])]
+function cont_from_dict(data::Dict{String, <:Any})::ContModel
+    cells = [Cell{data["grid"]["celltype"]...}(Tuple(x))
+             for x in eachrow(data["grid"]["cells"])]
     nodes = [Node(Ferrite.Vec(x...)) for x in eachrow(data["grid"]["nodes"])]
     grid = Grid(cells, nodes)
     dh₁ = DofHandler(grid)
@@ -347,8 +355,7 @@ function cont_from_dict(data::Dict{String,<:Any})::ContModel
     ch = ConstraintHandler(dh₁)
     add!(ch, db)
     close!(ch)
-    return ContModel(
-        grid,
+    return ContModel(grid,
         dh₁,
         dh₂,
         cv,
@@ -360,16 +367,15 @@ function cont_from_dict(data::Dict{String,<:Any})::ContModel
         data["values"]["by"],
         data["values"]["t"],
         data["values"]["fault"],
-        ch
-    )
+        ch)
 end
 
-function cont_to_dict(cm::ContModel)::Dict{String,<:Any}
-    re = Dict{String,Any}()
+function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
+    re = Dict{String, Any}()
     cells = reduce(vcat, [[x.nodes...]' for x in cm.grid.cells])
     nodes = reduce(vcat, [[x.x...]' for x in cm.grid.nodes])
     type = [typeof(cm.grid.cells[1]).parameters...]
-    re["grid"] = Dict{String,Any}()
+    re["grid"] = Dict{String, Any}()
     re["grid"]["cells"] = cells
     re["grid"]["nodes"] = nodes
     re["grid"]["celltype"] = type
@@ -377,7 +383,7 @@ function cont_to_dict(cm::ContModel)::Dict{String,<:Any}
     ui = string(cm.dh₁.field_interpolations[1])
     ti = string(cm.dh₂.field_interpolations[1])
     oi = string(cm.dh₂.field_interpolations[2])
-    re["dh"] = Dict{String,Any}()
+    re["dh"] = Dict{String, Any}()
     re["dh"]["ui"] = ui
     re["dh"]["ti"] = ti
     re["dh"]["oi"] = oi
@@ -386,17 +392,17 @@ function cont_to_dict(cm::ContModel)::Dict{String,<:Any}
     ip = string(cm.cellvalues.func_interp)
     weights = cm.cellvalues.qr.weights
     points = reduce(vcat, [[x.data...]' for x in cm.cellvalues.qr.points])
-    re["cellvalues"] = Dict{String,Any}()
+    re["cellvalues"] = Dict{String, Any}()
     re["cellvalues"]["type"] = type
     re["cellvalues"]["ip"] = ip
     re["cellvalues"]["points"] = points
     re["cellvalues"]["weights"] = weights
 
     slack = cm.ch.dbcs[1].local_face_dofs[1]
-    re["ch"] = Dict{String,Any}()
+    re["ch"] = Dict{String, Any}()
     re["ch"]["slack"] = slack
 
-    re["values"] = Dict{String,Any}()
+    re["values"] = Dict{String, Any}()
     re["values"]["area"] = cm.area
     re["values"]["m"] = cm.m_nodal
     re["values"]["d"] = cm.d_nodal
@@ -411,13 +417,13 @@ function cont_to_dict(cm::ContModel)::Dict{String,<:Any}
     return re
 end
 
-function disc_to_dict(dm::DiscModel)::Dict{String,<:Any}
+function disc_to_dict(dm::DiscModel)::Dict{String, <:Any}
     re = Dict(string(key) => getfield(dm, key) for key in fieldnames(DiscModel))
     re["model"] = "DiscModel"
     return re
 end
 
-function model_to_dict(model::GridModel)::Dict{String,<:Any}
+function model_to_dict(model::GridModel)::Dict{String, <:Any}
     if typeof(model) === ContModel
         return cont_to_dict(model)
     else
@@ -425,34 +431,28 @@ function model_to_dict(model::GridModel)::Dict{String,<:Any}
     end
 end
 
-
 """
     load_discrete_model(dataname::String, scaling_factor::Float64)::DiscModel
 
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
-function load_discrete_model(
-    dataname::String,
-    scaling_factor::Float64
-)::DiscModel
-    if(contains(dataname, ".h5"))
+function load_discrete_model(dataname::String,
+    scaling_factor::Float64)::DiscModel
+    if (contains(dataname, ".h5"))
         load_discrete_model_from_hdf5(dataname, scaling_factor)
-    elseif(contains(dataname, ".json"))
+    elseif (contains(dataname, ".json"))
         load_discrete_model_from_powermodels(dataname, scaling_factor)
     else
         error("Couldn't read $dataname")
     end
 end
 
-function load_discrete_model_from_hdf5(
-    dataname::String,
-    scaling_factor::Float64
-)::DiscModel
+function load_discrete_model_from_hdf5(dataname::String,
+    scaling_factor::Float64)::DiscModel
     data = h5read(dataname, "/")
     coord = albers_projection(data["bus_coord"] ./ (180 / pi))
     coord ./= scaling_factor
-    dm = DiscModel(
-        vec(data["gen_inertia"]),
+    dm = DiscModel(vec(data["gen_inertia"]),
         vec(data["gen_prim_ctrl"]),
         Int64.(vec(data["gen"][:, 1])),
         findall(vec(data["bus"][:, 2]) .== 3)[1],
@@ -466,16 +466,12 @@ function load_discrete_model_from_hdf5(
         vec(data["gen"][:, 9]) / 100.0,
         size(data["bus"], 1),
         size(data["gen"], 1),
-        size(data["branch"], 1),
-    )
+        size(data["branch"], 1))
     return dm
 end
 
-
-function load_discrete_model_from_powermodels(
-    dataname::String,
-    scaling_factor::Float64
-)::DiscModel
+function load_discrete_model_from_powermodels(dataname::String,
+    scaling_factor::Float64)::DiscModel
     data = JSON3.read("europe.json")
     bus_label = Dict{Int, Int}()
     inertia, gen_prim_ctrl, theta, pmax = Float64[], Float64[], Float64[], Float64[]
@@ -485,24 +481,24 @@ function load_discrete_model_from_powermodels(
     coord = Vector{Float64}[]
     id_slack = 0
 
-    for (i,(s, bus)) in enumerate(data[:bus])
-        bus_label[parse(Int,"$s")] = i
+    for (i, (s, bus)) in enumerate(data[:bus])
+        bus_label[parse(Int, "$s")] = i
         push!(coord, bus[:coord])
         if bus[:bus_type] == 3
             id_slack = i
         end
         push!(va, bus[:va] / 180.0 * pi)
-    end 
+    end
 
     for (i, gen) in data[:gen]
         push!(inertia, gen[:inertia])
         push!(gen_prim_ctrl, gen[:primary])
         push!(id_gen, bus_label[gen[:gen_bus]])
-        bus_label[gen[:gen_bus]] 
+        bus_label[gen[:gen_bus]]
         push!(pg, gen[:pg])
         push!(pmax, gen[:pmax])
     end
-      
+
     p_load = zeros(length(data[:bus]))
     load_freq_coef = zeros(length(data[:bus]))
     for (i, load) in data[:load]
@@ -510,11 +506,11 @@ function load_discrete_model_from_powermodels(
         p_load[id_load] += load[:pd]
         load_freq_coef[id_load] += load[:load_coefficient]
     end
-        
+
     for (i, branch) in data[:branch]
         push!(susceptance, 1.0 / branch[:br_x])
         push!(id_branch, [bus_label[branch[:f_bus]], bus_label[branch[:t_bus]]])
-    end 
+    end
 
     id_branch = Matrix(reduce(hcat, id_branch)')
     coord = Matrix(reduce(hcat, coord)')

@@ -61,8 +61,7 @@ mutable struct ContModel <: GridModel
     θ₀::Function
     fault::Function
     ch::ConstraintHandler
-    ContModel(
-        grid::Grid,
+    function ContModel(grid::Grid,
         dh₁::DofHandler,
         dh₂::DofHandler,
         cellvalues::CellScalarValues,
@@ -74,29 +73,71 @@ mutable struct ContModel <: GridModel
         by_nodal::Vector{<:Real},
         θ₀_nodal::Vector{<:Real},
         fault_nodal::Vector{<:Real},
-        ch::ConstraintHandler) = new(
-        grid,
-        dh₁,
-        dh₂,
-        cellvalues,
-        area,
-        m_nodal,
-        d_nodal,
-        p_nodal,
-        bx_nodal,
-        by_nodal,
-        θ₀_nodal,
-        fault_nodal,
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, m_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, d_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, p_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, bx_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, by_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, θ₀_nodal, :u, extrapolate=extrapolate, warn=warn),
-        (x; extrapolate=true, warn=:semi) -> interpolate(x, grid, dh₁, fault_nodal, :u, extrapolate=extrapolate, warn=warn),
-        ch
-    )
-    ContModel(; grid::Grid,
+        ch::ConstraintHandler)
+        new(grid,
+            dh₁,
+            dh₂,
+            cellvalues,
+            area,
+            m_nodal,
+            d_nodal,
+            p_nodal,
+            bx_nodal,
+            by_nodal,
+            θ₀_nodal,
+            fault_nodal,
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                m_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                d_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                p_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                bx_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                by_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                θ₀_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            (x; extrapolate = true, warn = :semi) -> interpolate(x,
+                grid,
+                dh₁,
+                fault_nodal,
+                :u,
+                extrapolate = extrapolate,
+                warn = warn),
+            ch)
+    end
+    function ContModel(; grid::Grid,
         dh₁::DofHandler,
         dh₂::DofHandler,
         cellvalues::CellScalarValues,
@@ -108,21 +149,22 @@ mutable struct ContModel <: GridModel
         by_nodal::Vector{<:Real},
         θ₀_nodal::Vector{<:Real},
         fault_nodal::Vector{<:Real},
-        ch::ConstraintHandler) = ContModel(grid,
-        dh₁::DofHandler,
-        dh₂,
-        cellvalues,
-        area,
-        m_nodal,
-        d_nodal,
-        p_nodal,
-        bx_nodal,
-        by_nodal,
-        θ₀_nodal,
-        fault_nodal,
-        ch)
+        ch::ConstraintHandler)
+        ContModel(grid,
+            dh₁::DofHandler,
+            dh₂,
+            cellvalues,
+            area,
+            m_nodal,
+            d_nodal,
+            p_nodal,
+            bx_nodal,
+            by_nodal,
+            θ₀_nodal,
+            fault_nodal,
+            ch)
+    end
 end
-
 
 abstract type ContSol end
 
@@ -230,7 +272,6 @@ struct DynamicSol <: ContSol
     """
     model::ContModel
 end
-
 
 include("init.jl")
 include("mesh.jl")

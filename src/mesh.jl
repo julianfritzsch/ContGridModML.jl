@@ -1,19 +1,15 @@
 export get_mesh
 
-
-
-function get_mesh(
-    file::String;
-    kwargs...)::Tuple{Grid,Real}
-    if(contains(file, ".json"))
+function get_mesh(file::String;
+    kwargs...)::Tuple{Grid, Real}
+    if (contains(file, ".json"))
         get_mesh_from_json(file, kwargs...)
-    elseif(contains(file, ".msh"))
+    elseif (contains(file, ".msh"))
         get_mesh_from_mesh(file, kwargs...)
     else
         error("This type of file is not supported.")
     end
 end
-
 
 """
     get_grid(filein::String, dx::Real[, fileout::String=""])::Tuple{Grid,Real}
@@ -22,15 +18,13 @@ Generate a grid using Gmsh from a json file containing the border coordinates.
 The file can be saved to a file if fileout is specified.
 """
 
-function get_mesh_from_json(
-    filein::String;
+function get_mesh_from_json(filein::String;
     mesh_size::Real = 0.0,
     mesh_size_max::Real = 0.1,
     algo::Int = 7,
-    fileout::String="")::Tuple{Grid,Real}
-
+    fileout::String = "")::Tuple{Grid, Real}
     border, scale_factor = import_border(filein)
-    border = border[1:end-1, :]
+    border = border[1:(end - 1), :]
 
     # Initialize gmsh
     Gmsh.initialize()
@@ -41,7 +35,7 @@ function get_mesh_from_json(
     end
 
     # Add the lines
-    for i in 1:size(border, 1)-1
+    for i in 1:(size(border, 1) - 1)
         gmsh.model.geo.add_line(i, i + 1, i)
     end
     gmsh.model.geo.add_line(size(border, 1), 1, size(border, 1))
@@ -52,7 +46,7 @@ function get_mesh_from_json(
 
     # Synchronize the model
     gmsh.model.geo.synchronize()
-    
+
     # Define algo and coarseness
     gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
     gmsh.model.mesh.set_algorithm(2, 1, algo) # dim = 2, assuming there's only one surface
@@ -80,7 +74,6 @@ function get_mesh_from_json(
     Gmsh.finalize()
 
     return grid, scale_factor
-
 end
 
 """
@@ -88,9 +81,7 @@ end
 
 Load a grid from a gmsh file. The file needs to contain a field ScaleFactor.
 """
-function get_mesh_from_mesh(
-    file::String
-)::Tuple{Grid,Real}
+function get_mesh_from_mesh(file::String)::Tuple{Grid, Real}
     grid = togrid(file)
     global scale_factor = nothing
     open(file) do f

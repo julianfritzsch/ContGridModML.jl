@@ -24,7 +24,6 @@ function load_discrete_models(foldername::String,
     return dms
 end
 
-
 """
 $(TYPEDSIGNATURES)
 
@@ -52,7 +51,7 @@ function assemble_f_static(model::ContModel,
         update_model!(model, :p, dm, tf, κ = κ, σ = σ)
         f[:, i] = Af * q_proj * model.p_nodal
     end
-    
+
     return f
 end
 
@@ -81,8 +80,7 @@ The returned matrices are
 - `q_coords` Coordinates of the quadrature points in the same order as stored in
     the DoF-handler
 """
-function assemble_matrices_static(model::ContModel
-)::Tuple{
+function assemble_matrices_static(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
@@ -110,7 +108,7 @@ function assemble_matrices_static(model::ContModel
                 # Enforce slack bus, see below
                 if dofs[i] != id_slack
                     Af[dofs[i], ix] = φᵢ * dΩ
-                    Ak[dofs[i], 2*ix-1:2*ix] = ∇φᵢ * sqrt(dΩ)
+                    Ak[dofs[i], (2 * ix - 1):(2 * ix)] = ∇φᵢ * sqrt(dΩ)
                 end
             end
             ix += 1
@@ -120,7 +118,7 @@ function assemble_matrices_static(model::ContModel
     # bus to make sure that the linear equations will have a unique solution
     Islack = spzeros(n_dofs, n_dofs)
     Islack[[id_slack], [id_slack]] .= 1
-    
+
     return Af, Ak, Islack, q_coords
 end
 
@@ -137,8 +135,7 @@ The returned matrices are
 """
 function projectors_static(model::ContModel,
     dm::DiscModel,
-    q_coords::Matrix{<:Real}
-)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    q_coords::Matrix{<:Real})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
     interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
     #n_base_funcs = getnbasefunctions(model.cellvalues)
@@ -154,7 +151,7 @@ function projectors_static(model::ContModel,
         # use the closest grid point instead
         if ph.cells[1] === nothing
             min_ix = argmin([norm(coord .- point)
-                for coord in grid_coords])
+                             for coord in grid_coords])
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
@@ -184,8 +181,7 @@ $(TYPEDSIGNATURES)
 
 Do the actual learning of the parameters.
 """
-function _learn_susceptances(
-    A::AbstractSparseMatrix,
+function _learn_susceptances(A::AbstractSparseMatrix,
     Islack::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
     proj::AbstractSparseMatrix,
@@ -197,14 +193,12 @@ function _learn_susceptances(
     opt = ADAM(0.1),
     bmin::Real = 0.1,
     rng::AbstractRNG = Xoshiro(123),
-    δ::Real = 1.0
-)::Tuple{Vector{T}, Matrix{T}} where T<:Real
-    
+    δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
     param = Flux.params(b)
     n_train = size(f_train, 2)
-    @assert mod(n_train, n_batch) == 0 "The number of batches must be a divisor of the number of training cases."
+    @assert mod(n_train, n_batch)==0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batch)
-    
+
     losses = zeros(n_epoch, n_batch)
     n_q = size(q_proj, 1)
     for e in 1:n_epoch
@@ -215,8 +209,8 @@ function _learn_susceptances(
             gs = Flux.gradient(param) do
                 btemp = max.(b, bmin)
                 K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
-                θ = proj * (K \ f_train[:,batch])
-                loss = Flux.huber_loss(θ, th_train[:,batch], delta = δ)
+                θ = proj * (K \ f_train[:, batch])
+                loss = Flux.huber_loss(θ, th_train[:, batch], delta = δ)
             end
             losses[e, k] = loss
             if (mod(e, 50) == 0 && k == 1)
@@ -270,37 +264,35 @@ function learn_susceptances(;
     rng::AbstractRNG = Xoshiro(123),
     opt = ADAM(0.1),
     bmin::Real = 0.1,
-    δ = 0.5
-)::StaticSol
-    
+    δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
     @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
-    
+
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)
     Af, Ak, Islack, q_coords = assemble_matrices_static(model)
     θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
-    
-    f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ  = κ)
-    f_test = assemble_f_static(model, test, Af, q_proj, tf = tf, σ = σ, κ  = κ)
-        
+
+    f_train = assemble_f_static(model, train, Af, q_proj, tf = tf, σ = σ, κ = κ)
+    f_test = assemble_f_static(model, test, Af, q_proj, tf = tf, σ = σ, κ = κ)
+
     th_train = assemble_disc_theta(train)
     th_test = assemble_disc_theta(test)
-    
+
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
-    
+
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, θ_proj, f_train,
         th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
-        
+
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
-    
+
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
     train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
-    
+
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
-    
+
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
         train_losses, test_losses, model)
 end
@@ -326,8 +318,7 @@ function get_losses(train_pred::Matrix{<:Real},
     test_pred::Matrix{<:Real},
     t_train::Matrix{<:Real},
     t_test::Matrix{<:Real};
-    δ::Real = 1.0
-)::Tuple{Vector{<:Real}, Vector{<:Real}}
+    δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
     train_losses = vcat(Flux.huber_loss(train_pred, t_train, delta = δ,
         agg = x -> mean(x, dims = 1))...)
     test_losses = vcat(Flux.huber_loss(test_pred, t_test, delta = δ,

@@ -1,21 +1,18 @@
 export init_model, integrate, interpolate
 
-
 """
     get_params(grid::Grid, tf::Real, dm::DiscModel; κ::Real=1.0, u_min::Real=0.1, σ::Real=0.01, bfactor::Real=1.0, bmin::Real=1000.)::ContModel
 
 Create a continuous model from a discrete model by using a diffusion process to distribute the paramters.
 """
-function init_model(
-    grid::Grid,
+function init_model(grid::Grid,
     tf::Real,
     dm::DiscModel;
     κ::Real = 1.0,
     u_min::Real = 0.1,
     σ::Real = 0.01,
     bfactor::Real = 1.0,
-    bmin::Real = 1.0
-)::ContModel
+    bmin::Real = 1.0)::ContModel
 
     # Create the dof handler and interpolation functions
     dh₁ = DofHandler(grid)
@@ -25,22 +22,21 @@ function init_model(
     push!(dh₂, :θ, 1)
     push!(dh₂, :ω, 1)
     close!(dh₂)
-    ip = Lagrange{2,RefTetrahedron,1}() # 2D tetrahedron -> triangle
-    qr = QuadratureRule{2,RefTetrahedron}(2)
+    ip = Lagrange{2, RefTetrahedron, 1}() # 2D tetrahedron -> triangle
+    qr = QuadratureRule{2, RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
-
 
     # Create initial condition functions for diffusion process
     function d₀(x, _)
         re = 0
-        for i in 1:dm.Ngen
+        for i in 1:(dm.Ngen)
             if dm.p_gen[i] == 0
                 continue
             end
             dif = x .- dm.coord[dm.id_gen[i], :]
             re += dm.d_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
         end
-        for i in 1:dm.Nbus
+        for i in 1:(dm.Nbus)
             dif = x .- dm.coord[i, :]
             re += dm.d_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
         end
@@ -48,7 +44,7 @@ function init_model(
     end
     function m₀(x, _)
         re = 0
-        for i in 1:dm.Ngen
+        for i in 1:(dm.Ngen)
             if dm.p_gen[i] == 0
                 continue
             end
@@ -59,11 +55,11 @@ function init_model(
     end
     function p₀(x, _)
         re = 0
-        for i in 1:dm.Ngen
+        for i in 1:(dm.Ngen)
             dif = x .- dm.coord[dm.id_gen[i], :]
             re += dm.p_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
         end
-        for i in 1:dm.Nbus
+        for i in 1:(dm.Nbus)
             dif = x .- dm.coord[i, :]
             re -= dm.p_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
         end
@@ -75,16 +71,21 @@ function init_model(
     #function by₀(x, _)
     #    return bb(dm, x, σ, bfactor)[2]
     #end
-    
+
     # Get the area of the grid
     area = integrate(dh₁, cellvalues, (x) -> 1)
-    
+
     d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
-    d = normalize_values!(d, sum(dm.d_load) + sum(dm.d_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
+    d = normalize_values!(d,
+        sum(dm.d_load) + sum(dm.d_gen[dm.p_gen .> 0]),
+        area,
+        grid,
+        dh₁,
+        cellvalues)
     m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)
-    m = normalize_values!(m, sum(dm.m_gen[dm.p_gen.>0]), area, grid, dh₁, cellvalues)
+    m = normalize_values!(m, sum(dm.m_gen[dm.p_gen .> 0]), area, grid, dh₁, cellvalues)
     p = diffusion(dh₁, cellvalues, grid, p₀, tf, κ)
-    p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode= :off)
+    p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode = :off)
     #bx = diffusion(dh₁, cellvalues, grid, bx₀, tf, κ)
     #by = diffusion(dh₁, cellvalues, grid, by₀, tf, κ)
     bx = ones(size(m))
@@ -104,8 +105,7 @@ function init_model(
     θ₀ = zeros(ndofs(dh₁))
     dp = zeros(ndofs(dh₁))
 
-    return ContModel(
-        grid,
+    return ContModel(grid,
         dh₁,
         dh₂,
         cellvalues,
@@ -117,8 +117,7 @@ function init_model(
         by,
         θ₀,
         dp,
-        ch,
-    )
+        ch)
 end
 
 """
@@ -126,9 +125,16 @@ end
 
 Run a diffusion process to distribute the paramters over the grid.
 """
-function diffusion(dh::DofHandler, cellvalues::CellScalarValues, grid::Grid, f::Function, tf::Real, κ::Real)::Vector{<:Real}
+function diffusion(dh::DofHandler,
+    cellvalues::CellScalarValues,
+    grid::Grid,
+    f::Function,
+    tf::Real,
+    κ::Real)::Vector{<:Real}
     # Use the ferrite.jl assemble to assemble the stiffness matrix for the diffusion process.
-    function assembleK!(K::SparseMatrixCSC, dh::DofHandler, cellvalues::CellScalarValues)::SparseMatrixCSC
+    function assembleK!(K::SparseMatrixCSC,
+        dh::DofHandler,
+        cellvalues::CellScalarValues)::SparseMatrixCSC
         n_basefuncs = getnbasefunctions(cellvalues)
         Kₑ = zeros(n_basefuncs, n_basefuncs)
 
@@ -154,7 +160,9 @@ function diffusion(dh::DofHandler, cellvalues::CellScalarValues, grid::Grid, f::
     end
 
     # Use the Ferrite.jl assemble to create the mass matrix for the diffusion proccess.
-    function assembleM!(M::SparseMatrixCSC, dh::DofHandler, cellvalues::CellScalarValues)::SparseMatrixCSC
+    function assembleM!(M::SparseMatrixCSC,
+        dh::DofHandler,
+        cellvalues::CellScalarValues)::SparseMatrixCSC
         n_basefuncs = getnbasefunctions(cellvalues)
         Mₑ = zeros(n_basefuncs, n_basefuncs)
 
@@ -198,12 +206,11 @@ function diffusion(dh::DofHandler, cellvalues::CellScalarValues, grid::Grid, f::
         mul!(du, κ * K, u)
     end
 
-    odefun = ODEFunction(dif!, mass_matrix=M, jac_prototype=K)
+    odefun = ODEFunction(dif!, mass_matrix = M, jac_prototype = K)
     problem = ODEProblem(odefun, u₀, (0.0, tf))
-    sol = solve(problem, RadauIIA5(), reltol=1e-5, abstol=1e-7)
+    sol = solve(problem, RadauIIA5(), reltol = 1e-5, abstol = 1e-7)
     return sol.u[end]
 end
-
 
 """
     integrate(dh::DofHandler, cellvalues::CellScalarValues, f::Function)::Real
@@ -232,16 +239,15 @@ end
 
 Interpolate values from the continues model from a  coordinate. If the given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Tensor{1,2,<:Real},
+function interpolate(x::Tensor{1, 2, <:Real},
     grid::Grid, dh::DofHandler,
     u::Vector{<:Real},
     fname::Symbol;
     off::Real = 0.0,
     factor::Real = 1.0,
     extrapolate::Bool = true,
-    warn::Symbol = :semi
-)::Real
-    ph = PointEvalHandler(grid, [x], warn=(warn == :all))
+    warn::Symbol = :semi)::Real
+    ph = PointEvalHandler(grid, [x], warn = (warn == :all))
     if isnan(get_point_values(ph, dh, u, fname)[1])
         if extrapolate
             if warn in [:all, :semi]
@@ -262,7 +268,7 @@ end
 
 Interpolate values from the continues model from a vector of coordinates. If a given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Vector{Tensor{1,2,<:Real}},
+function interpolate(x::Vector{Tensor{1, 2, <:Real}},
     grid::Grid,
     dh::DofHandler,
     u::Vector{<:Real},
@@ -270,9 +276,8 @@ function interpolate(x::Vector{Tensor{1,2,<:Real}},
     off::Real = 0.0,
     factor::Real = 1.0,
     extrapolate::Bool = true,
-    warn::Symbol = :semi
-)::Vector{<:Real}
-    ph = PointEvalHandler(grid, x, warn=(warn == :all))
+    warn::Symbol = :semi)::Vector{<:Real}
+    ph = PointEvalHandler(grid, x, warn = (warn == :all))
     re = get_point_values(ph, dh, u, fname)
     nan_ix = findall(isnan.(re))
     if extrapolate && !isempty(nan_ix)
@@ -294,15 +299,13 @@ end
 
 Normalize nodal values over the given area. There are two methods: "factor" rescales everything by a common factor, "off" adds an offset to normalize.
 """
-function normalize_values!(
-    u::Vector{<:Real},
+function normalize_values!(u::Vector{<:Real},
     value::Real,
     area::Real,
     grid::Grid,
     dh::DofHandler,
     cellvalues::CellScalarValues;
-    mode::Symbol = :factor
-)::Vector{<:Real}
+    mode::Symbol = :factor)::Vector{<:Real}
     utot = integrate(dh, cellvalues, x -> interpolate(x, grid, dh, u, :u))
     ch = ConstraintHandler(dh)
     if mode == :factor
@@ -320,6 +323,3 @@ function normalize_values!(
     apply!(u, ch)
     return u
 end
-
-
-
