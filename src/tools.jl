@@ -436,25 +436,29 @@ end
 
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
-function load_discrete_model(dataname::String,
-    scaling_factor::Float64)::DiscModel
+function load_discrete_model(dataname::String;
+    scaling_factor::Real=1, project::Bool=true)::DiscModel
     if (contains(dataname, ".h5"))
-        load_discrete_model_from_hdf5(dataname, scaling_factor)
+        load_discrete_model_from_hdf5(dataname, project, scaling_factor)
     elseif (contains(dataname, ".json"))
-        load_discrete_model_from_json(dataname, scaling_factor)
+        load_discrete_model_from_json(dataname, project, scaling_factor)
     else
         error("Couldn't read $dataname")
     end
 end
 
-function load_discrete_model_from_hdf5(dataname::String,
-    scaling_factor::Float64)::DiscModel
+function load_discrete_model_from_hdf5(dataname::String, project::Bool,
+    scaling_factor::Real)::DiscModel
     data = h5read(dataname, "/")
-    coord = albers_projection(data["bus_coord"] ./ (180 / pi))
-    coord ./= scaling_factor
+    if project
+        coord = albers_projection(data["bus_coord"] ./ (180 / pi))
+        coord ./= scaling_factor
+    else
+        coord = data["bus_coord"]
+    end
     dm = DiscModel(vec(data["gen_inertia"]),
         vec(data["gen_prim_ctrl"]),
-        Int64.(vec(data["gen"][:, 1])),
+        Int.(vec(data["gen"][:, 1])),
         findall(vec(data["bus"][:, 2]) .== 3)[1],
         coord,
         vec(data["load_freq_coef"]),
@@ -470,17 +474,17 @@ function load_discrete_model_from_hdf5(dataname::String,
     return dm
 end
 
-function load_discrete_model_from_json(dataname::String;
-    project::Bool = true,
-    scale_factor::Real = 1)
+function load_discrete_model_from_json(dataname::String,
+    project::Bool,
+    scale_factor::Real)
     data = JSON3.read(dataname, Dict)
     return load_discrete_model_from_powermodels(data,
-        project = project,
-        scale_factor = scale_factor)
+        project,
+        scale_factor)
 end
 
-function load_discrete_model_from_powermodels(data::Dict{String, Any}; project::Bool = true,
-    scale_factor::Real = 1.0)::DiscModel
+function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::Bool,
+    scale_factor::Real)::DiscModel
     bus_label = sort!([parse(Int, i) for i in keys(data["bus"])])
     bus_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(bus_label))
     n_bus = size(bus_label, 1)
@@ -541,4 +545,40 @@ function load_discrete_model_from_powermodels(data::Dict{String, Any}; project::
         pmax, n_bus, n_gen, n_branch)
 
     return dm
+end
+
+function remove_nan(grid::Dict{String, Any})
+    for v in values(grid["gen"])
+        isnan(v["pg"]) && (v["pg"] = 0)
+        isnan(v["qg"]) && (v["qg"] = 0)
+    end
+    for v in values(grid["branch"])
+        isnan(v["pf"]) && (v["pf"] = 0)
+        isnan(v["pt"]) && (v["pt"] = 0)
+        isnan(v["qf"]) && (v["qf"] = 0)
+        isnan(v["qt"]) && (v["qt"] = 0)
+    end
+    return grid
+end
+
+function distribute_country_load(grid::Dict{String, Any}, country::Dict{String, <:Real})
+    Sb = grid["baseMVA"]
+    for key in keys(grid["load"])
+        ctry = grid["bus"][string(grid["load"][key]["load_bus"])]["country"]
+        coeff = grid["bus"][string(grid["load"][key]["load_bus"])]["load_prop"]
+        grid["load"][key]["pd"] = country[ctry] * coeff / Sb
+    end
+    return grid
+end
+
+function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real})
+    grid = distribute_country_load(grid, country)
+    pm = instantiate_model(grid, DCMPPowerModel, build_opf)
+    set_silent(pm.model)
+    result = optimize_model!(pm, optimizer=Gurobi.Optimizer)
+    if !(result["termination_status"] in [OPTIMAL LOCALLY_SOLVED ALMOST_OPTIMAL ALMOST_LOCALLY_SOLVED])
+        throw(ErrorException("The OPF did not converge."))
+    end
+    update_data!(grid, result["solution"])
+    return remove_nan(grid)
 end

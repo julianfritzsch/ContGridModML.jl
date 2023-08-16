@@ -3,6 +3,7 @@ results/
 docs.jl
 data/panta_to_json.jl
 data/pantagruel_case_adjusted.m
+data/matlab_pm.zip
 
 # Created by https://www.toptal.com/developers/gitignore/api/julia
 # Edit at https://www.toptal.com/developers/gitignore?templates=julia
