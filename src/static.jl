@@ -7,8 +7,6 @@ Load all the discrete models for the training and test data sets.
 """
 function discrete_models(train_folder::String,
     test_folder::String,
-    n_train::Integer,
-    n_test::Integer,
     scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
@@ -19,7 +17,7 @@ function load_discrete_models(foldername::String,
     scale_factor::Real)::Vector{DiscModel}
     dms = DiscModel[]
     for fn in joinpath.(foldername, readdir(foldername))
-        push!(dms, load_discrete_model(fn, scale_factor))
+        push!(dms, load_discrete_model(fn, project=true, scaling_factor=scale_factor))
     end
     return dms
 end
@@ -288,7 +286,7 @@ function learn_susceptances(;
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
 
     train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
-    train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
+    train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
 
     update_model!(model, :bx, b[1:2:end])
     update_model!(model, :by, b[2:2:end])
