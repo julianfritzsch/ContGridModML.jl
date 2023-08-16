@@ -17,12 +17,15 @@ function load_discrete_models(foldername::String,
     scale_factor::Real)::Vector{DiscModel}
     dms = DiscModel[]
     for fn in joinpath.(foldername, readdir(foldername))
-        push!(dms, load_discrete_model(fn, project=true, scaling_factor=scale_factor))
+        push!(dms, load_discrete_model(fn, project = true, scaling_factor = scale_factor))
     end
     return dms
 end
 
-function discrete_models_entsoe(pm::Dict{String, Any}, f_date::DateTime, t_date::DateTime; scale_factor::Real=0)
+function discrete_models_entsoe(pm::Dict{String, Any},
+    f_date::DateTime,
+    t_date::DateTime;
+    scale_factor::Real = 0)
     df = DataFrame(CSV.File(MODULE_FOLDER * "/data/entsoe.csv"))
     t_range = f_date:Hour(1):t_date
     dms = Vector{DiscModel}(undef, size(t_range, 1))
@@ -366,8 +369,11 @@ function learn_susceptances_dates(;
     δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
     pm = parse_file(model_file)
-    train = discrete_models_entsoe(pm, train_f_date, train_t_date, scale_factor=scale_factor)
-    test = discrete_models_entsoe(pm, test_f_date, test_t_date, scale_factor=scale_factor)
+    train = discrete_models_entsoe(pm,
+        train_f_date,
+        train_t_date,
+        scale_factor = scale_factor)
+    test = discrete_models_entsoe(pm, test_f_date, test_t_date, scale_factor = scale_factor)
     @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
 
     model = init_model(mesh, tf, train[1], κ = κ, σ = σ)

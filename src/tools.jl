@@ -437,7 +437,7 @@ end
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
 function load_discrete_model(dataname::String;
-    scaling_factor::Real=1, project::Bool=true)::DiscModel
+    scaling_factor::Real = 1, project::Bool = true)::DiscModel
     if (contains(dataname, ".h5"))
         load_discrete_model_from_hdf5(dataname, project, scaling_factor)
     elseif (contains(dataname, ".json"))
@@ -571,7 +571,7 @@ function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real}
     grid = distribute_country_load(grid, country)
     pm = instantiate_model(grid, DCMPPowerModel, build_opf)
     set_silent(pm.model)
-    result = optimize_model!(pm, optimizer=Gurobi.Optimizer)
+    result = optimize_model!(pm, optimizer = Gurobi.Optimizer)
     if !(result["termination_status"] in [OPTIMAL LOCALLY_SOLVED ALMOST_OPTIMAL ALMOST_LOCALLY_SOLVED])
         throw(ErrorException("The OPF did not converge."))
     end
