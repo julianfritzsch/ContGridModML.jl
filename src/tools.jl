@@ -522,13 +522,9 @@ function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::
         pmax[ix] = gen["pmax"]
     end
 
-    load_label = sort!([parse(Int, string(i)) for i in keys(data["load"])])
-    load_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(load_label))
-    n_load = size(load_label, 1)
-    load_freq_coef, pl, id_load = zeros(n_load), zeros(n_load), zeros(Int, n_load)
-    for (i, load) in data["load"]
-        ix = load_id[i]
-        id_load[ix] = bus_id[string(load["load_bus"])]
+    load_freq_coef, pl = zeros(n_bus), zeros(n_bus)
+    for load in values(data["load"])
+        ix = bus_id[string(load["load_bus"])]
         pl[ix] += load["pd"]
         load_freq_coef[ix] += load["load_freq_coef"]
     end
