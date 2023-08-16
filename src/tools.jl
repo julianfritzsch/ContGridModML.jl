@@ -109,129 +109,6 @@ function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
     return DynamicSol((data[string(key)] for key in fieldnames(DynamicSol))...)
 end
 
-"""
-    update_model!(model::ContModel, u_name::Symbol, u::Vector{<:Real})::Nothing
-
-Update the continuos model from a vector of nodal values. It is sufficient to pass the symbol name without the _nodal suffix.
-"""
-function update_model!(model::ContModel, u_name::Symbol, u::Vector{<:Real})::Nothing
-    if size(u) != (getnnodes(model.grid),)
-        throw(DimensionMismatch("The size of the vector does not match the number of nodes."))
-    end
-    setproperty!(model, Symbol(string(u_name) * "_nodal"), u)
-    setproperty!(model,
-        u_name,
-        (x; extrapolate = true, warn = :semi) -> interpolate(x,
-            model.grid,
-            model.dh₁,
-            u,
-            :u,
-            extrapolate = extrapolate,
-            warn = warn))
-    return nothing
-end
-
-"""
-    update_model(model::ContModel,u_name::Symbol, dm::DiscModel, tf::Real[, κ::Real=1.0, u_min::Real=0.1, σ::Real=0.01, bfactor::Real=1.0, bmin::Real=1000.0])::Nothing
-
-Update the continuous model from a discrete model. The paramter are distributed using a diffusion procees (similar to the get_params function)
-"""
-function update_model!(model::ContModel,
-    u_name::Symbol,
-    dm::DiscModel,
-    tf::Real;
-    κ::Real = 1.0,
-    u_min::Real = 0.1,
-    σ::Real = 0.01,
-    bfactor::Real = 1.0,
-    bmin::Real = 1000.0)::Nothing
-
-    ## This whole function and the get_params should be refactored ##
-    area = integrate(model.dh₁, model.cellvalues, (x) -> 1)
-    if u_name == :d
-        function d₀(x, _)
-            re = 0
-            for i in 1:(dm.Ngen)
-                if dm.p_gen == 0
-                    continue
-                end
-                dif = x .- dm.coord[dm.id_gen[i], :]
-                re += dm.d_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-            end
-            for i in 1:(dm.Nbus)
-                dif = x .- dm.coord[i, :]
-                re += dm.d_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-            end
-            return max(re, u_min)
-        end
-        d = diffusion(model.dh₁, model.cellvalues, model.grid, d₀, tf, κ)
-        d = normalize_values!(d,
-            sum(dm.d_load) + sum(dm.d_gen[dm.p_gen .> 0]),
-            area,
-            model.grid,
-            model.dh₁,
-            model.cellvalues)
-        update_model!(model, u_name, d)
-    elseif u_name == :m
-        function m₀(x, _)
-            re = 0
-            for i in 1:(dm.Ngen)
-                if dm.p_gen[i] == 0
-                    continue
-                end
-                dif = x .- dm.coord[dm.id_gen[i], :]
-                re += dm.m_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-            end
-            return max(re, u_min)
-        end
-        m = diffusion(model.dh₁, model.cellvalues, model.grid, m₀, tf, κ)
-        m = normalize_values!(m,
-            sum(dm.m_gen[dm.p_gen .> 0]),
-            area,
-            model.grid,
-            model.dh₁,
-            model.cellvalues)
-        update_model!(model, u_name, m)
-    elseif u_name == :p
-        function p₀(x, _)
-            re = 0
-            for i in 1:(dm.Ngen)
-                dif = x .- dm.coord[dm.id_gen[i], :]
-                re += dm.p_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-            end
-            for i in 1:(dm.Nbus)
-                dif = x .- dm.coord[i, :]
-                re -= dm.p_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-            end
-            return re
-        end
-        p = diffusion(model.dh₁, model.cellvalues, model.grid, p₀, tf, κ)
-        p = normalize_values!(p,
-            0.0,
-            area,
-            model.grid,
-            model.dh₁,
-            model.cellvalues,
-            mode = :off)
-        update_model!(model, u_name, p)
-    elseif u_name == :bx
-        function bx₀(x, _)
-            return bb(dm, x, σ, bfactor)[1]
-        end
-        bx = diffusion(model.dh₁, model.cellvalues, model.grid, bx₀, tf, κ)
-        bx .= max.(bx, bmin)
-        update_model!(model, u_name, bx)
-    elseif u_name == :by
-        function by₀(x, _)
-            return bb(dm, x, σ, bfactor)[2]
-        end
-        by = diffusion(model.dh₁, model.cellvalues, model.grid, by₀, tf, κ)
-        by .= max.(by, bmin)
-        update_model!(model, u_name, by)
-    end
-
-    return nothing
-end
 
 """
     albers_projection(coord::Array{<:Real,2}; # as latitude, longitude  lon0::Real=13.37616 / 180 * pi, lat0::Real=46.94653 / 180 * pi, lat1::Real=10 / 180 * pi, lat2::Real=50 / 180 * pi, R::Real=6371.0)::Array{<:Real,2}
@@ -239,12 +116,12 @@ end
 Apply the Albers projection to a vector of coordinates. The coordinates need to be given as latitude, longitude.
 See https://en.wikipedia.org/wiki/Albers_projection
 """
-function albers_projection(coord::Array{<:Real, 2};
+function albers_projection(coord::Matrix{<:Real};
     lon0::Real = 13.37616 / 180 * pi,
     lat0::Real = 46.94653 / 180 * pi,
     lat1::Real = 10 / 180 * pi,
     lat2::Real = 50 / 180 * pi,
-    R::Real = 6371.0)::Array{<:Real, 2}
+    R::Real = 6371.0)::Matrix{<:Real}
     n = 1 / 2 * (sin(lat1) + sin(lat2))
     theta = n * (coord[:, 2] .- lon0)
     c = cos(lat1)^2 + 2 * n * sin(lat1)
@@ -261,14 +138,14 @@ end
 Import border from a json file, apply the Albers projection and rescale it such that the longest dimension is 1.
 The coordinates need to be given as latitude, longitude.
 """
-function import_border(filename::String)::Tuple{Array{<:Real, 2}, <:Real}
-    data = JSON3.read(filename)[:border]
+function import_border(filename::String)::Tuple{Matrix{<:Real}, <:Real}
+    data = JSON.parsefile(filename)
     N = size(data["border"], 1)
 
     b = zeros(N, 2)
     for i in 1:N
-        b[i, 1] = data[i][1] / 180 * pi
-        b[i, 2] = data[i][2] / 180 * pi
+        b[i, 1] = data["border"][i][1] / 180 * pi
+        b[i, 2] = data["border"][i][2] / 180 * pi
     end
 
     if b[1, :] != b[end, :]
@@ -436,29 +313,25 @@ end
 
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
-function load_discrete_model(dataname::String;
-    scaling_factor::Real = 1, project::Bool = true)::DiscModel
+function load_discrete_model(dataname::String,
+    scaling_factor::Float64)::DiscModel
     if (contains(dataname, ".h5"))
-        load_discrete_model_from_hdf5(dataname, project, scaling_factor)
+        load_discrete_model_from_hdf5(dataname, scaling_factor)
     elseif (contains(dataname, ".json"))
-        load_discrete_model_from_json(dataname, project, scaling_factor)
+        load_discrete_model_from_powermodels(dataname, scaling_factor)
     else
         error("Couldn't read $dataname")
     end
 end
 
-function load_discrete_model_from_hdf5(dataname::String, project::Bool,
-    scaling_factor::Real)::DiscModel
+function load_discrete_model_from_hdf5(dataname::String,
+    scaling_factor::Float64)::DiscModel
     data = h5read(dataname, "/")
-    if project
-        coord = albers_projection(data["bus_coord"] ./ (180 / pi))
-        coord ./= scaling_factor
-    else
-        coord = data["bus_coord"]
-    end
+    coord = albers_projection(data["bus_coord"] ./ (180 / pi))
+    coord ./= scaling_factor
     dm = DiscModel(vec(data["gen_inertia"]),
         vec(data["gen_prim_ctrl"]),
-        Int.(vec(data["gen"][:, 1])),
+        Int64.(vec(data["gen"][:, 1])),
         findall(vec(data["bus"][:, 2]) .== 3)[1],
         coord,
         vec(data["load_freq_coef"]),
@@ -474,107 +347,52 @@ function load_discrete_model_from_hdf5(dataname::String, project::Bool,
     return dm
 end
 
-function load_discrete_model_from_json(dataname::String,
-    project::Bool,
-    scale_factor::Real)
-    data = JSON3.read(dataname, Dict)
-    return load_discrete_model_from_powermodels(data,
-        project,
-        scale_factor)
-end
-
-function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::Bool,
-    scale_factor::Real)::DiscModel
-    bus_label = sort!([parse(Int, i) for i in keys(data["bus"])])
-    bus_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(bus_label))
-    n_bus = size(bus_label, 1)
-    coord, va = zeros(n_bus, 2), zeros(n_bus)
+function load_discrete_model_from_powermodels(dataname::String,
+    scaling_factor::Float64)::DiscModel
+    data = JSON3.read("europe.json")
+    bus_label = Dict{Int, Int}()
+    inertia, gen_prim_ctrl, theta, pmax = Float64[], Float64[], Float64[], Float64[]
+    pg, va, susceptance = Float64[], Float64[], Float64[]
+    id_gen, id_load = Int[], Int[]
+    id_branch = Vector{Int}[]
+    coord = Vector{Float64}[]
     id_slack = 0
 
-    for (i, bus) in data["bus"]
-        ix = bus_id[i]
-        if project
-            coord[ix, :] = albers_projection(bus["coord"][[2, 1], :]' / 180 * π) /
-                           scale_factor # This is ugly, we might want to change the albers projection argmuent order
-        else
-            coord[ix, :] = bus["coord"]
+    for (i, (s, bus)) in enumerate(data[:bus])
+        bus_label[parse(Int, "$s")] = i
+        push!(coord, bus[:coord])
+        if bus[:bus_type] == 3
+            id_slack = i
         end
-        if bus["bus_type"] == 3
-            id_slack = ix
-        end
-        va[ix] = bus["va"]
+        push!(va, bus[:va] / 180.0 * pi)
     end
 
-    gen_label = sort!([parse(Int, i) for i in keys(data["gen"])])
-    gen_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(gen_label))
-    n_gen = size(gen_label, 1)
-    inertia, gen_prim_ctrl, pmax, pg, id_gen = zeros(n_gen),
-    zeros(n_gen),
-    zeros(n_gen),
-    zeros(n_gen),
-    zeros(Int, n_gen)
-    for (i, gen) in data["gen"]
-        ix = gen_id[i]
-        inertia[ix] = gen["inertia"]
-        gen_prim_ctrl[ix] = gen["gen_prim_ctrl"]
-        id_gen[ix] = bus_id[string(gen["gen_bus"])]
-        pg[ix] = gen["pg"]
-        pmax[ix] = gen["pmax"]
+    for (i, gen) in data[:gen]
+        push!(inertia, gen[:inertia])
+        push!(gen_prim_ctrl, gen[:primary])
+        push!(id_gen, bus_label[gen[:gen_bus]])
+        bus_label[gen[:gen_bus]]
+        push!(pg, gen[:pg])
+        push!(pmax, gen[:pmax])
     end
 
-    load_freq_coef, pl = zeros(n_bus), zeros(n_bus)
-    for load in values(data["load"])
-        ix = bus_id[string(load["load_bus"])]
-        pl[ix] += load["pd"]
-        load_freq_coef[ix] += load["load_freq_coef"]
+    p_load = zeros(length(data[:bus]))
+    load_freq_coef = zeros(length(data[:bus]))
+    for (i, load) in data[:load]
+        id_load = bus_label[load[:load_bus]]
+        p_load[id_load] += load[:pd]
+        load_freq_coef[id_load] += load[:load_coefficient]
     end
 
-    n_branch = length(data["branch"])
-    id_branch, susceptance = zeros(Int, n_branch, 2), zeros(n_branch)
-    for (i, branch) in enumerate(values(data["branch"]))
-        susceptance[i] = branch["br_x"] / (branch["br_x"]^2 + branch["br_r"]^2)
-        id_branch[i, :] = [bus_id[string(branch["f_bus"])], bus_id[string(branch["t_bus"])]]
+    for (i, branch) in data[:branch]
+        push!(susceptance, 1.0 / branch[:br_x])
+        push!(id_branch, [bus_label[branch[:f_bus]], bus_label[branch[:t_bus]]])
     end
+
+    id_branch = Matrix(reduce(hcat, id_branch)')
+    coord = Matrix(reduce(hcat, coord)')
 
     dm = DiscModel(inertia, gen_prim_ctrl, id_gen, id_slack, coord,
-        load_freq_coef, id_branch, susceptance, pl, va, pg,
-        pmax, n_bus, n_gen, n_branch)
-
-    return dm
-end
-
-function remove_nan(grid::Dict{String, Any})
-    for v in values(grid["gen"])
-        isnan(v["pg"]) && (v["pg"] = 0)
-        isnan(v["qg"]) && (v["qg"] = 0)
-    end
-    for v in values(grid["branch"])
-        isnan(v["pf"]) && (v["pf"] = 0)
-        isnan(v["pt"]) && (v["pt"] = 0)
-        isnan(v["qf"]) && (v["qf"] = 0)
-        isnan(v["qt"]) && (v["qt"] = 0)
-    end
-    return grid
-end
-
-function distribute_country_load(grid::Dict{String, Any}, country::Dict{String, <:Real})
-    Sb = grid["baseMVA"]
-    for key in keys(grid["load"])
-        ctry = grid["bus"][string(grid["load"][key]["load_bus"])]["country"]
-        coeff = grid["bus"][string(grid["load"][key]["load_bus"])]["load_prop"]
-        grid["load"][key]["pd"] = country[ctry] * coeff / Sb
-    end
-    return grid
-end
-
-function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real})
-    grid = distribute_country_load(grid, country)
-    pm = instantiate_model(grid, DCMPPowerModel, build_opf)
-    set_silent(pm.model)
-    result = optimize_model!(pm, optimizer = Gurobi.Optimizer)
-    if !(result["termination_status"] in [OPTIMAL LOCALLY_SOLVED ALMOST_OPTIMAL ALMOST_LOCALLY_SOLVED])
-        throw(ErrorException("The OPF did not converge."))
-    end
-    update_data!(grid, result["solution"])
-    return remove_nan(grid)
+        load_freq_coef, id_branch, susceptance, p_load, va, pg,
+        pmax, length(data[:bus]), length(data[:gen]), length(data[:branch]))
 end

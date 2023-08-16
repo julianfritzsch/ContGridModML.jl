@@ -1,18 +1,12 @@
-export init_model, integrate, interpolate
+export init_model, integrate, interpolate, distribute_load!, set_slack!
 
 """
     get_params(grid::Grid, tf::Real, dm::DiscModel; κ::Real=1.0, u_min::Real=0.1, σ::Real=0.01, bfactor::Real=1.0, bmin::Real=1000.)::ContModel
 
 Create a continuous model from a discrete model by using a diffusion process to distribute the paramters.
 """
-function init_model(grid::Grid,
-    tf::Real,
-    dm::DiscModel;
-    κ::Real = 1.0,
-    u_min::Real = 0.1,
-    σ::Real = 0.01,
-    bfactor::Real = 1.0,
-    bmin::Real = 1.0)::ContModel
+function init_model(grid::Grid
+)::ContModel
 
     # Create the dof handler and interpolation functions
     dh₁ = DofHandler(grid)
@@ -26,191 +20,80 @@ function init_model(grid::Grid,
     qr = QuadratureRule{2, RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
 
-    # Create initial condition functions for diffusion process
-    function d₀(x, _)
-        re = 0
-        for i in 1:(dm.Ngen)
-            if dm.p_gen[i] == 0
-                continue
-            end
-            dif = x .- dm.coord[dm.id_gen[i], :]
-            re += dm.d_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-        end
-        for i in 1:(dm.Nbus)
-            dif = x .- dm.coord[i, :]
-            re += dm.d_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-        end
-        return max(re, u_min)
-    end
-    function m₀(x, _)
-        re = 0
-        for i in 1:(dm.Ngen)
-            if dm.p_gen[i] == 0
-                continue
-            end
-            dif = x .- dm.coord[dm.id_gen[i], :]
-            re += dm.m_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-        end
-        return max(re, u_min)
-    end
-    function p₀(x, _)
-        re = 0
-        for i in 1:(dm.Ngen)
-            dif = x .- dm.coord[dm.id_gen[i], :]
-            re += dm.p_gen[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-        end
-        for i in 1:(dm.Nbus)
-            dif = x .- dm.coord[i, :]
-            re -= dm.p_load[i] / (σ^2 * 2 * π) * exp(-0.5 * (dif' * dif) / σ^2)
-        end
-        return re
-    end
-    #function bx₀(x, _)
-    #    return bb(dm, x, σ, bfactor)[1]
-    #end
-    #function by₀(x, _)
-    #    return bb(dm, x, σ, bfactor)[2]
-    #end
-
     # Get the area of the grid
     area = integrate(dh₁, cellvalues, (x) -> 1)
 
-    d = diffusion(dh₁, cellvalues, grid, d₀, tf, κ)
-    d = normalize_values!(d,
-        sum(dm.d_load) + sum(dm.d_gen[dm.p_gen .> 0]),
-        area,
-        grid,
-        dh₁,
-        cellvalues)
-    m = diffusion(dh₁, cellvalues, grid, m₀, tf, κ)
-    m = normalize_values!(m, sum(dm.m_gen[dm.p_gen .> 0]), area, grid, dh₁, cellvalues)
-    p = diffusion(dh₁, cellvalues, grid, p₀, tf, κ)
-    p = normalize_values!(p, 0.0, area, grid, dh₁, cellvalues, mode = :off)
-    #bx = diffusion(dh₁, cellvalues, grid, bx₀, tf, κ)
-    #by = diffusion(dh₁, cellvalues, grid, by₀, tf, κ)
-    bx = ones(size(m))
-    by = ones(size(m))
-    bx .= max.(bx, bmin)
-    by .= max.(by, bmin)
+    m, d, θ₀ = zeros(ndofs(dh₁)), zeros(ndofs(dh₁)), zeros(ndofs(dh₁))
+    p, dp = zeros(ndofs(dh₁)), zeros(ndofs(dh₁))
+    bx, by = ones(ndofs(dh₁)), ones(ndofs(dh₁))
+    by = ones(ndofs(dh₁))
+    id_slack = 0
+    disc_proj, q_proj = spzeros(0,0), spzeros(0,0)
+    return ContModel(grid, dh₁, dh₂, cellvalues, area, m, d, p, bx, by,
+        θ₀, dp, id_slack, disc_proj, q_proj)
+end
 
-    # Create constraint handler for stable solution
-    node_coords = [dh₁.grid.nodes[i].x for i in 1:size(dh₁.grid.nodes, 1)]
+
+function set_slack!(cm::ContModel,
+    dm::DiscModel
+)
+    node_coords = [cm.dh₁.grid.nodes[i].x for i in 1:size(cm.dh₁.grid.nodes, 1)]
     disc_slack = [Ferrite.Vec(dm.coord[dm.id_slack, :]...)]
     id_slack = argmin(norm.(node_coords .- disc_slack))
-    ch = ConstraintHandler(dh₁)
+    ch = ConstraintHandler(cm.dh₁)
     gen₀ = Dirichlet(:u, Set([id_slack]), (x, t) -> 0)
     add!(ch, gen₀)
     close!(ch)
     update!(ch, 0)
-    θ₀ = zeros(ndofs(dh₁))
-    dp = zeros(ndofs(dh₁))
-
-    return ContModel(grid,
-        dh₁,
-        dh₂,
-        cellvalues,
-        area,
-        m,
-        d,
-        p,
-        bx,
-        by,
-        θ₀,
-        dp,
-        ch)
+    cm.id_slack = ch.prescribed_dofs[1]
+    nothing
 end
 
-"""
-    diffusion(dh::DofHandler, cellvalues::CellScalarValues, grid::Grid, f::Function, tf::Real, κ::Real)::Vector{<:Real}
 
-Run a diffusion process to distribute the paramters over the grid.
-"""
-function diffusion(dh::DofHandler,
-    cellvalues::CellScalarValues,
-    grid::Grid,
-    f::Function,
-    tf::Real,
-    κ::Real)::Vector{<:Real}
-    # Use the ferrite.jl assemble to assemble the stiffness matrix for the diffusion process.
-    function assembleK!(K::SparseMatrixCSC,
-        dh::DofHandler,
-        cellvalues::CellScalarValues)::SparseMatrixCSC
-        n_basefuncs = getnbasefunctions(cellvalues)
-        Kₑ = zeros(n_basefuncs, n_basefuncs)
-
-        assembler = start_assemble(K)
-
-        for cell in CellIterator(dh)
-            fill!(Kₑ, 0)
-            Ferrite.reinit!(cellvalues, cell)
-
-            for q_point in 1:getnquadpoints(cellvalues)
-                dΩ = getdetJdV(cellvalues, q_point)
-                for i in 1:n_basefuncs
-                    ∇φᵢ = shape_gradient(cellvalues, q_point, i)
-                    for j in 1:n_basefuncs
-                        ∇φⱼ = shape_gradient(cellvalues, q_point, j)
-                        Kₑ[i, j] -= ∇φᵢ ⋅ ∇φⱼ * dΩ
-                    end
-                end
-            end
-            assemble!(assembler, celldofs(cell), Kₑ)
+function distribute_load!(cm::ContModel,
+    dm::DiscModel
+)
+    cm.p[:] .= 0.0
+    grid_coords = [node.x for node in cm.grid.nodes]
+    ip = cm.dh₁.field_interpolations[1]
+    # assuming that p(x) is a sum of delta functions
+    for (i, point) in enumerate(eachrow(dm.coord))
+        point = Ferrite.Vec(point...)
+        ph = PointEvalHandler(cm.grid, [point], warn = :false)
+        # If no cell is found (the point is outside the grid),
+        # use the closest grid point instead
+        if ph.cells[1] === nothing
+            min_ix = argmin([norm(coord .- point)
+                             for coord in grid_coords])
+            ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
-        return K
-    end
-
-    # Use the Ferrite.jl assemble to create the mass matrix for the diffusion proccess.
-    function assembleM!(M::SparseMatrixCSC,
-        dh::DofHandler,
-        cellvalues::CellScalarValues)::SparseMatrixCSC
-        n_basefuncs = getnbasefunctions(cellvalues)
-        Mₑ = zeros(n_basefuncs, n_basefuncs)
-
-        assembler = start_assemble(M)
-
-        for cell in CellIterator(dh)
-            fill!(Mₑ, 0)
-            Ferrite.reinit!(cellvalues, cell)
-
-            for q_point in 1:getnquadpoints(cellvalues)
-                dΩ = getdetJdV(cellvalues, q_point)
-                for i in 1:n_basefuncs
-                    φᵢ = shape_value(cellvalues, q_point, i)
-                    for j in 1:n_basefuncs
-                        φⱼ = shape_value(cellvalues, q_point, j)
-                        Mₑ[i, j] += φᵢ ⋅ φⱼ * dΩ
-                    end
-                end
-            end
-            assemble!(assembler, celldofs(cell), Mₑ)
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
+        for j in 1:getnbasefunctions(cm.cellvalues)
+            cm.p[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]  
         end
-        return M
-    end
-    M = create_sparsity_pattern(dh)
-    M = assembleM!(M, dh, cellvalues)
-    K = create_sparsity_pattern(dh)
-    K = assembleK!(K, dh, cellvalues)
-
-    # Create intital conditions
-    ch = ConstraintHandler(dh)
-    d = Dirichlet(:u, Set(1:getnnodes(grid)), f)
-    add!(ch, d)
-    close!(ch)
-    update!(ch, 0)
-    u₀ = zeros(ndofs(dh))
-    apply!(u₀, ch)
-    # In a future release of Ferrite this can be replaced by
-    # apply_analytical!(u₀, dh, :u, f)
-
-    function dif!(du, u, _, _)
-        mul!(du, κ * K, u)
     end
 
-    odefun = ODEFunction(dif!, mass_matrix = M, jac_prototype = K)
-    problem = ODEProblem(odefun, u₀, (0.0, tf))
-    sol = solve(problem, RadauIIA5(), reltol = 1e-5, abstol = 1e-7)
-    return sol.u[end]
+    for (i, ix) in enumerate(dm.id_gen)
+        coord = dm.coord[ix,:]
+        point = Ferrite.Vec(coord...)
+        ph = PointEvalHandler(cm.grid, [point], warn = :false)
+        if ph.cells[1] === nothing
+            min_ix = argmin([norm(coord .- point)
+                             for coord in grid_coords])
+            ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+        end
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
+        for j in 1:getnbasefunctions(cm.cellvalues)
+            cm.p[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]  
+        end
+    end
 end
+
+
 
 """
     integrate(dh::DofHandler, cellvalues::CellScalarValues, f::Function)::Real

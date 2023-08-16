@@ -1,174 +1,48 @@
 module ContGridModML
 
-using LinearAlgebra
-using Ferrite
-using FerriteGmsh
-using FerriteViz
-using CairoMakie
-using Gmsh
-using SparseArrays
-using Flux
-using Random
-using HDF5
-using BlockArrays
-using StatsBase
-using OrdinaryDiffEq
-using JuMP
-using Gurobi
-using Base.Threads
-using DocStringExtensions
-using PowerModels
-using JSON3
-using Dates
-using DataFrames
-using CSV
+using LinearAlgebra, Ferrite, FerriteGmsh, FerriteViz, CairoMakie,
+    Ferrite, Gmsh, SparseArrays, Flux, Random, HDF5, BlockArrays,
+    StatsBase, OrdinaryDiffEq, JuMP, Gurobi, Base.Threads,
+    DocStringExtensions
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
 
 abstract type GridModel end
 
-mutable struct DiscModel <: GridModel
-    m_gen::Vector{<:Real}
-    d_gen::Vector{<:Real}
+mutable struct DiscModel{T <: Real} <: GridModel
+    m_gen::Vector{T}
+    d_gen::Vector{T}
     id_gen::Vector{<:Int}
     id_slack::Int
-    coord::Matrix{<:Real}
-    d_load::Vector{<:Real}
+    coord::Matrix{T}
+    d_load::Vector{T}
     id_line::Matrix{Int}
-    b::Vector{<:Real}
-    p_load::Vector{<:Real}
-    th::Vector{<:Real}
-    p_gen::Vector{<:Real}
-    max_gen::Vector{<:Real}
+    b::Vector{T}
+    p_load::Vector{T}
+    th::Vector{T}
+    p_gen::Vector{T}
+    max_gen::Vector{T}
     Nbus::Int
     Ngen::Int
     Nline::Int
 end
 
-mutable struct ContModel <: GridModel
+mutable struct ContModel{T <: Real} <: GridModel
     grid::Grid
     dh₁::DofHandler
     dh₂::DofHandler
     cellvalues::CellScalarValues
     area::Real
-    m_nodal::Vector{<:Real}
-    d_nodal::Vector{<:Real}
-    p_nodal::Vector{<:Real}
-    bx_nodal::Vector{<:Real}
-    by_nodal::Vector{<:Real}
-    θ₀_nodal::Vector{<:Real}
-    fault_nodal::Vector{<:Real}
-    m::Function
-    d::Function
-    p::Function
-    bx::Function
-    by::Function
-    θ₀::Function
-    fault::Function
-    ch::ConstraintHandler
-    function ContModel(grid::Grid,
-        dh₁::DofHandler,
-        dh₂::DofHandler,
-        cellvalues::CellScalarValues,
-        area::Real,
-        m_nodal::Vector{<:Real},
-        d_nodal::Vector{<:Real},
-        p_nodal::Vector{<:Real},
-        bx_nodal::Vector{<:Real},
-        by_nodal::Vector{<:Real},
-        θ₀_nodal::Vector{<:Real},
-        fault_nodal::Vector{<:Real},
-        ch::ConstraintHandler)
-        new(grid,
-            dh₁,
-            dh₂,
-            cellvalues,
-            area,
-            m_nodal,
-            d_nodal,
-            p_nodal,
-            bx_nodal,
-            by_nodal,
-            θ₀_nodal,
-            fault_nodal,
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                m_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                d_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                p_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                bx_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                by_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                θ₀_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            (x; extrapolate = true, warn = :semi) -> interpolate(x,
-                grid,
-                dh₁,
-                fault_nodal,
-                :u,
-                extrapolate = extrapolate,
-                warn = warn),
-            ch)
-    end
-    function ContModel(; grid::Grid,
-        dh₁::DofHandler,
-        dh₂::DofHandler,
-        cellvalues::CellScalarValues,
-        area::Real,
-        m_nodal::Vector{<:Real},
-        d_nodal::Vector{<:Real},
-        p_nodal::Vector{<:Real},
-        bx_nodal::Vector{<:Real},
-        by_nodal::Vector{<:Real},
-        θ₀_nodal::Vector{<:Real},
-        fault_nodal::Vector{<:Real},
-        ch::ConstraintHandler)
-        ContModel(grid,
-            dh₁::DofHandler,
-            dh₂,
-            cellvalues,
-            area,
-            m_nodal,
-            d_nodal,
-            p_nodal,
-            bx_nodal,
-            by_nodal,
-            θ₀_nodal,
-            fault_nodal,
-            ch)
-    end
+    m::Vector{T}
+    d::Vector{T}
+    p::Vector{T}
+    bx::Vector{T}
+    by::Vector{T}
+    θ₀::Vector{T}
+    fault::Vector{T}
+    id_slack::Int
+    disc_proj::SparseMatrixCSC{T, Int}
+    q_proj::SparseMatrixCSC{T, Int}
 end
 
 abstract type ContSol end
@@ -178,40 +52,40 @@ Contains the results of the static training.
 
 $(TYPEDFIELDS)
 """
-struct StaticSol <: ContSol
+struct StaticSol{T <: Real} <: ContSol
     """
     Vector of the nodal susceptances. The ordering is alternating ``b_x`` and ``b_y``.
     The values are ordered in the same order as in the DoF handler `cm.dh₁`.
     """
-    b::Vector{<:Real}
+    b::Vector{T}
     """
     The training losses. The row corresponds to the epoch and the column to the data set.
     """
-    losses::Array{<:Real, 2}
+    losses::Matrix{T}
     """
     Prediction of the values for each training data set with the trained values.
     """
-    train_pred::Array{<:Real, 2}
+    train_pred::Matrix{T}
     """
     Prediction of the values for each test data set with the trained values.
     """
-    test_pred::Array{<:Real, 2}
+    test_pred::Matrix{T}
     """
     Ground truth data for the training data sets.
     """
-    t_train::Array{<:Real, 2}
-    """
+    t_train::Matrix{T}
+    """ q_proj_b
     Ground truth data for the test data sets.
     """
-    t_test::Array{<:Real, 2}
+    t_test::Matrix{T}
     """
     Loss values for all training data sets.
     """
-    train_losses::Vector{<:Real}
+    train_losses::Vector{T}
     """
     Loss values for all test data sets.
     """
-    test_losses::Vector{<:Real}
+    test_losses::Vector{T}
     """
     The continuous model with the updated susceptances.
     """

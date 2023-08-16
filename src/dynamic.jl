@@ -371,29 +371,25 @@ the gradient and value of the loss function are calculated and returned.
 function simul(disc_sol::ODESolution,
     M_const::SparseMatrixCSC,
     K_const::SparseMatrixCSC,
-    m::Vector{<:Real},
-    d::Vector{<:Real},
-    f::Vector{<:Real},
+    m::Vector{T},
+    d::Vector{T},
+    f::Vector{T},
     A::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
     ω_proj::SparseMatrixCSC,
     g_proj::Vector{SparseMatrixCSC},
     idxs::Vector{<:Integer},
-    u₀::Vector{<:Real},
+    u₀::Vector{T},
     tf::Real;
     cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{<:Real}, Real}
+    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()
+)::Tuple{Vector{T}, T} where {T <: Real}
+
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
-    sol_lambda = lambda_dyn(cont_sol,
-        disc_sol,
-        M,
-        K,
-        ω_proj,
-        tf,
-        idxs,
-        solve_kwargs = lambda_kwargs)
+    sol_lambda = lambda_dyn(cont_sol, disc_sol, M, K, ω_proj, tf,
+        idxs, solve_kwargs = lambda_kwargs)
     gr = grad(cont_sol, sol_lambda, g_proj)
     loss_val = loss(cont_sol, disc_sol, ω_proj, idxs)[1]
     return gr, loss_val
@@ -458,7 +454,7 @@ Calculate the projection matrix of the discrete solution onto the adjoint soluti
 """
 function grad_proj(A::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
-    evecs::Array{<:Real, 2},
+    evecs::Matrix{<:Real},
     n_coeffs::Integer)::Vector{SparseMatrixCSC}
     g_proj = Vector{SparseMatrixCSC}()
     for i in 1:n_coeffs
@@ -472,11 +468,12 @@ $(TYPEDSIGNATURES)
 
 Update the parameters using a restricted gradient descent to ensure positiveness.
 """
-function update(p::Vector{<:Real},
-    g::Vector{<:Real},
-    eve::Matrix{<:Real},
+function update(p::Vector{T},
+    g::Vector{T},
+    eve::Matrix{T},
     i::Integer,
-    f::Function)::Vector{<:Real}
+    f::Function
+)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)
@@ -587,19 +584,8 @@ function learn_dynamical_parameters(;
         m = eve_p * p[1:n_modes]
         d = eve_p * p[(n_modes + 1):end]
         @threads for j in 1:n_train
-            g, l = simul(disc_sols_train[j],
-                M,
-                K,
-                m,
-                d,
-                f_train[:, j],
-                A,
-                q_proj,
-                ω_proj,
-                g_proj,
-                comp_idxs,
-                u₀,
-                tf,
+            g, l = simul(disc_sols_train[j], M, K, m, d, f_train[:, j],
+                A, q_proj, ω_proj, g_proj, comp_idxs, u₀, tf,
                 cont_kwargs = cont_solve_kwargs,
                 lambda_kwargs = lambda_solve_kwargs)
             grads[:, j] .= g
@@ -610,33 +596,13 @@ function learn_dynamical_parameters(;
     end
     m = eve_p * p[1:n_modes]
     d = eve_p * p[(n_modes + 1):end]
-    test_losses = test_loss(disc_sols_test,
-        M,
-        K,
-        m,
-        d,
-        f_test,
-        A,
-        q_proj,
-        ω_proj,
-        comp_idxs,
-        u₀,
-        tf,
-        cont_kwargs = cont_solve_kwargs)
+    test_losses = test_loss(disc_sols_test, M, K, m, d, f_test, A,
+        q_proj, ω_proj, comp_idxs, u₀, tf, cont_kwargs = cont_solve_kwargs)
     update_model!(cm, :m, m)
     update_model!(cm, :d, d)
 
-    return DynamicSol(train_ix,
-        test_ix,
-        comp_idxs,
-        m,
-        d,
-        p,
-        eve,
-        losses,
-        losses[end, :],
-        test_losses,
-        cm)
+    return DynamicSol(train_ix, test_ix, comp_idxs, m, d, p, eve,
+        losses, losses[end, :], test_losses, cm)
 end
 
 """
