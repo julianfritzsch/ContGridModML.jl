@@ -19,17 +19,40 @@ function init_model(grid::Grid)::ContModel
     qr = QuadratureRule{2, RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
 
-    # Get the area of the grid
-    area = integrate(dh₁, cellvalues, (x) -> 1)
+    n_dofs = ndofs(dh₁)
 
-    m, d, θ₀ = zeros(ndofs(dh₁)), zeros(ndofs(dh₁)), zeros(ndofs(dh₁))
-    p, dp = zeros(ndofs(dh₁)), zeros(ndofs(dh₁))
-    bx, by = ones(ndofs(dh₁)), ones(ndofs(dh₁))
-    by = ones(ndofs(dh₁))
+    # Get the area of the grid
+
+    m, d, θ₀ = zeros(n_dofs), zeros(n_dofs), zeros(n_dofs)
+    p, dp = zeros(n_dofs), zeros(n_dofs)
+    bx, by = ones(n_dofs), ones(n_dofs)
     id_slack = 0
-    disc_proj, q_proj = spzeros(0, 0), spzeros(0, 0)
+    disc_proj = spzeros(0, 0)
+    q_proj = get_q_proj(dh₁, cellvalues)
+    area = integrate(dh₁, cellvalues, q_proj, ones(n_dofs))
     return ContModel(grid, dh₁, dh₂, cellvalues, area, m, d, p, bx, by,
         θ₀, dp, id_slack, disc_proj, q_proj)
+end
+
+function get_q_proj(dh::DofHandler, cellvalues::CellScalarValues)::SparseMatrixCSC
+    q_proj = spzeros(size(dh.cell_dofs, 1), ndofs(dh))
+    interp_fun = Ferrite.get_func_interpolations(dh, :u)[1]
+    ix = 1
+    for cell in CellIterator(dh)
+        Ferrite.reinit!(cellvalues, cell)
+        cell_dofs = celldofs(cell)
+        for q in 1:getnquadpoints(cellvalues)
+            point = spatial_coordinate(cellvalues,
+                q, getcoordinates(cell))
+            ph = PointEvalHandler(dh.grid, [Ferrite.Vec(point...)])
+            pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
+            for j in 1:getnbasefunctions(cellvalues)
+                q_proj[ix, cell_dofs[j]] = pv.N[j]
+            end
+            ix += 1
+        end
+    end
+    return q_proj
 end
 
 function set_slack!(cm::ContModel,
@@ -48,7 +71,7 @@ end
 
 function distribute_load!(cm::ContModel,
     dm::DiscModel)
-    cm.p[:] .= 0.0
+    pl, pg = zeros(ndofs(cm.dh₁)), zeros(ndofs(cm.dh₁))
     grid_coords = [node.x for node in cm.grid.nodes]
     ip = cm.dh₁.field_interpolations[1]
     # assuming that p(x) is a sum of delta functions
@@ -66,7 +89,7 @@ function distribute_load!(cm::ContModel,
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
-            cm.p[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]
+            pl[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]
         end
     end
 
@@ -83,9 +106,15 @@ function distribute_load!(cm::ContModel,
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
-            cm.p[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]
+            pg[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]
         end
     end
+
+    # Normalize values
+    pg .*= sum(dm.p_gen) / integrate(cm, pg)
+    pl .*= -sum(dm.p_load) / integrate(cm, pl)
+
+    cm.p[:] .= pg + pl
 end
 
 """
@@ -93,21 +122,26 @@ end
 
 Integrate a function over the whole area of the grid using the finite element method.
 """
-function integrate(dh::DofHandler, cellvalues::CellScalarValues, f::Function)::Real
-    n_basefuncs = getnbasefunctions(cellvalues)
+function integrate(dh::DofHandler,
+    cellvalues::CellScalarValues,
+    q_proj::SparseMatrixCSC,
+    vals::Vector{<:Real})::Real
+    q_vals = q_proj * vals
     int = 0.0
+    i = 1
     for cell in CellIterator(dh)
         Ferrite.reinit!(cellvalues, cell)
         for q_point in 1:getnquadpoints(cellvalues)
-            x = spatial_coordinate(cellvalues, q_point, getcoordinates(cell))
             dΩ = getdetJdV(cellvalues, q_point)
-            for i in 1:n_basefuncs
-                φᵢ = shape_value(cellvalues, q_point, i)
-                int += f(x) * φᵢ * dΩ
-            end
+            int += q_vals[i] * dΩ
+            i += 1
         end
     end
     return int
+end
+
+function integrate(cm::ContModel, vals::Vector{<:Real})::Real
+    return integrate(cm.dh₁, cm.cellvalues, cm.q_proj, vals)
 end
 
 """
@@ -115,28 +149,23 @@ end
 
 Interpolate values from the continues model from a  coordinate. If the given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Tensor{1, 2, <:Real},
+function interpolate(x::Ferrite.Vec{2, T},
     grid::Grid, dh::DofHandler,
     u::Vector{<:Real},
     fname::Symbol;
     off::Real = 0.0,
     factor::Real = 1.0,
     extrapolate::Bool = true,
-    warn::Symbol = :semi)::Real
-    ph = PointEvalHandler(grid, [x], warn = (warn == :all))
-    if isnan(get_point_values(ph, dh, u, fname)[1])
-        if extrapolate
-            if warn in [:all, :semi]
-                println("There are points which are outside the grid. There value will be set to the value of the closest grid point.")
-            end
-            grid_coords = [node.x for node in grid.nodes]
-            min_ix = argmin([norm(coord .- x) for coord in grid_coords])
-            ph = PointEvalHandler(grid, [grid_coords[min_ix]])
-        elseif warn in [:all, :semi]
-            println("There are points which are outside the grid. There value will be set to NaN.")
-        end
-    end
-    return factor * get_point_values(ph, dh, u, fname)[1] + off
+    warn::Symbol = :semi)::Real where {T <: Real}
+    return interpolate([x],
+        grid,
+        dh,
+        u,
+        fname,
+        off = off,
+        factor = factor,
+        extrapolate = extrapolate,
+        warn = warn)[1]
 end
 
 """
@@ -144,7 +173,7 @@ end
 
 Interpolate values from the continues model from a vector of coordinates. If a given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
-function interpolate(x::Vector{Tensor{1, 2, <:Real}},
+function interpolate(x::Vector{Ferrite.Vec{2, T}},
     grid::Grid,
     dh::DofHandler,
     u::Vector{<:Real},
@@ -152,7 +181,7 @@ function interpolate(x::Vector{Tensor{1, 2, <:Real}},
     off::Real = 0.0,
     factor::Real = 1.0,
     extrapolate::Bool = true,
-    warn::Symbol = :semi)::Vector{<:Real}
+    warn::Symbol = :semi)::Vector{<:Real} where {T <: Real}
     ph = PointEvalHandler(grid, x, warn = (warn == :all))
     re = get_point_values(ph, dh, u, fname)
     nan_ix = findall(isnan.(re))
@@ -168,34 +197,4 @@ function interpolate(x::Vector{Tensor{1, 2, <:Real}},
         println("There are points which are outside the grid. There value will be set to NaN.")
     end
     return factor * get_point_values(ph, dh, u, fname) .+ off
-end
-
-"""
-    normalize_values!(u::Vector{<:Real}, value::Real, area::Real, grid::Grid, dh::DofHandler, cellvalues::CellScalarValues[, mode::String="factor"])::Vector{<:Real}
-
-Normalize nodal values over the given area. There are two methods: "factor" rescales everything by a common factor, "off" adds an offset to normalize.
-"""
-function normalize_values!(u::Vector{<:Real},
-    value::Real,
-    area::Real,
-    grid::Grid,
-    dh::DofHandler,
-    cellvalues::CellScalarValues;
-    mode::Symbol = :factor)::Vector{<:Real}
-    utot = integrate(dh, cellvalues, x -> interpolate(x, grid, dh, u, :u))
-    ch = ConstraintHandler(dh)
-    if mode == :factor
-        d = Dirichlet(:u, Set(1:getnnodes(grid)),
-            (x, t) -> interpolate(x, grid, dh, u, :u, factor = (value / utot)))
-    elseif mode == :off
-        d = Dirichlet(:u, Set(1:getnnodes(grid)),
-            (x, t) -> interpolate(x, grid, dh, u, :u, off = (value - utot) / area))
-    else
-        throw(ArgumentError("Mode must be :factor or :off"))
-    end
-    add!(ch, d)
-    close!(ch)
-    update!(ch, 0)
-    apply!(u, ch)
-    return u
 end
