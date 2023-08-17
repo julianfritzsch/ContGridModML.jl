@@ -4,7 +4,7 @@ function nodal_plot(model::ContModel,
     fieldname::Symbol;
     kwargs...)::Figure
     val = Vector{Real}(getfield(model, Symbol(string(fieldname) * "_nodal")))
-    nodal_plot(model, val, kwargs...)
+    nodal_plot(model, val; kwargs...)
 end
 
 function nodal_plot(model::ContModel,

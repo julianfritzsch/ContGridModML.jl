@@ -109,7 +109,6 @@ function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
     return DynamicSol((data[string(key)] for key in fieldnames(DynamicSol))...)
 end
 
-
 """
     albers_projection(coord::Array{<:Real,2}; # as latitude, longitude  lon0::Real=13.37616 / 180 * pi, lat0::Real=46.94653 / 180 * pi, lat1::Real=10 / 180 * pi, lat2::Real=50 / 180 * pi, R::Real=6371.0)::Array{<:Real,2}
 
@@ -139,13 +138,13 @@ Import border from a json file, apply the Albers projection and rescale it such 
 The coordinates need to be given as latitude, longitude.
 """
 function import_border(filename::String)::Tuple{Matrix{<:Real}, <:Real}
-    data = JSON.parsefile(filename)
+    data = JSON3.read(filename)[:border]
     N = size(data["border"], 1)
 
     b = zeros(N, 2)
     for i in 1:N
-        b[i, 1] = data["border"][i][1] / 180 * pi
-        b[i, 2] = data["border"][i][2] / 180 * pi
+        b[i, 1] = data[i][1] / 180 * pi
+        b[i, 2] = data[i][2] / 180 * pi
     end
 
     if b[1, :] != b[end, :]
@@ -347,52 +346,107 @@ function load_discrete_model_from_hdf5(dataname::String,
     return dm
 end
 
-function load_discrete_model_from_powermodels(dataname::String,
-    scaling_factor::Float64)::DiscModel
-    data = JSON3.read("europe.json")
-    bus_label = Dict{Int, Int}()
-    inertia, gen_prim_ctrl, theta, pmax = Float64[], Float64[], Float64[], Float64[]
-    pg, va, susceptance = Float64[], Float64[], Float64[]
-    id_gen, id_load = Int[], Int[]
-    id_branch = Vector{Int}[]
-    coord = Vector{Float64}[]
+function load_discrete_model_from_json(dataname::String,
+    project::Bool,
+    scale_factor::Real)
+    data = JSON3.read(dataname, Dict)
+    return load_discrete_model_from_powermodels(data,
+        project,
+        scale_factor)
+end
+
+function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::Bool,
+    scale_factor::Real)::DiscModel
+    bus_label = sort!([parse(Int, i) for i in keys(data["bus"])])
+    bus_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(bus_label))
+    n_bus = size(bus_label, 1)
+    coord, va = zeros(n_bus, 2), zeros(n_bus)
     id_slack = 0
 
-    for (i, (s, bus)) in enumerate(data[:bus])
-        bus_label[parse(Int, "$s")] = i
-        push!(coord, bus[:coord])
-        if bus[:bus_type] == 3
-            id_slack = i
+    for (i, bus) in data["bus"]
+        ix = bus_id[i]
+        if project
+            coord[ix, :] = albers_projection(bus["coord"][[2, 1], :]' / 180 * π) /
+                           scale_factor # This is ugly, we might want to change the albers projection argmuent order
+        else
+            coord[ix, :] = bus["coord"]
         end
-        push!(va, bus[:va] / 180.0 * pi)
+        if bus["bus_type"] == 3
+            id_slack = ix
+        end
+        va[ix] = bus["va"]
     end
 
-    for (i, gen) in data[:gen]
-        push!(inertia, gen[:inertia])
-        push!(gen_prim_ctrl, gen[:primary])
-        push!(id_gen, bus_label[gen[:gen_bus]])
-        bus_label[gen[:gen_bus]]
-        push!(pg, gen[:pg])
-        push!(pmax, gen[:pmax])
+    gen_label = sort!([parse(Int, i) for i in keys(data["gen"])])
+    gen_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(gen_label))
+    n_gen = size(gen_label, 1)
+    inertia, gen_prim_ctrl, pmax, pg, id_gen = zeros(n_gen),
+    zeros(n_gen),
+    zeros(n_gen),
+    zeros(n_gen),
+    zeros(Int, n_gen)
+    for (i, gen) in data["gen"]
+        ix = gen_id[i]
+        inertia[ix] = gen["inertia"]
+        gen_prim_ctrl[ix] = gen["gen_prim_ctrl"]
+        id_gen[ix] = bus_id[string(gen["gen_bus"])]
+        pg[ix] = gen["pg"]
+        pmax[ix] = gen["pmax"]
     end
 
-    p_load = zeros(length(data[:bus]))
-    load_freq_coef = zeros(length(data[:bus]))
-    for (i, load) in data[:load]
-        id_load = bus_label[load[:load_bus]]
-        p_load[id_load] += load[:pd]
-        load_freq_coef[id_load] += load[:load_coefficient]
+    load_freq_coef, pl = zeros(n_bus), zeros(n_bus)
+    for load in values(data["load"])
+        ix = bus_id[string(load["load_bus"])]
+        pl[ix] += load["pd"]
+        load_freq_coef[ix] += load["load_freq_coef"]
     end
 
-    for (i, branch) in data[:branch]
-        push!(susceptance, 1.0 / branch[:br_x])
-        push!(id_branch, [bus_label[branch[:f_bus]], bus_label[branch[:t_bus]]])
+    n_branch = length(data["branch"])
+    id_branch, susceptance = zeros(Int, n_branch, 2), zeros(n_branch)
+    for (i, branch) in enumerate(values(data["branch"]))
+        susceptance[i] = branch["br_x"] / (branch["br_x"]^2 + branch["br_r"]^2)
+        id_branch[i, :] = [bus_id[string(branch["f_bus"])], bus_id[string(branch["t_bus"])]]
     end
-
-    id_branch = Matrix(reduce(hcat, id_branch)')
-    coord = Matrix(reduce(hcat, coord)')
 
     dm = DiscModel(inertia, gen_prim_ctrl, id_gen, id_slack, coord,
-        load_freq_coef, id_branch, susceptance, p_load, va, pg,
-        pmax, length(data[:bus]), length(data[:gen]), length(data[:branch]))
+        load_freq_coef, id_branch, susceptance, pl, va, pg,
+        pmax, n_bus, n_gen, n_branch)
+
+    return dm
+end
+
+function remove_nan(grid::Dict{String, Any})
+    for v in values(grid["gen"])
+        isnan(v["pg"]) && (v["pg"] = 0)
+        isnan(v["qg"]) && (v["qg"] = 0)
+    end
+    for v in values(grid["branch"])
+        isnan(v["pf"]) && (v["pf"] = 0)
+        isnan(v["pt"]) && (v["pt"] = 0)
+        isnan(v["qf"]) && (v["qf"] = 0)
+        isnan(v["qt"]) && (v["qt"] = 0)
+    end
+    return grid
+end
+
+function distribute_country_load(grid::Dict{String, Any}, country::Dict{String, <:Real})
+    Sb = grid["baseMVA"]
+    for key in keys(grid["load"])
+        ctry = grid["bus"][string(grid["load"][key]["load_bus"])]["country"]
+        coeff = grid["bus"][string(grid["load"][key]["load_bus"])]["load_prop"]
+        grid["load"][key]["pd"] = country[ctry] * coeff / Sb
+    end
+    return grid
+end
+
+function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real})
+    grid = distribute_country_load(grid, country)
+    pm = instantiate_model(grid, DCMPPowerModel, build_opf)
+    set_silent(pm.model)
+    result = optimize_model!(pm, optimizer = Gurobi.Optimizer)
+    if !(result["termination_status"] in [OPTIMAL LOCALLY_SOLVED ALMOST_OPTIMAL ALMOST_LOCALLY_SOLVED])
+        throw(ErrorException("The OPF did not converge."))
+    end
+    update_data!(grid, result["solution"])
+    return remove_nan(grid)
 end

@@ -5,8 +5,7 @@ export init_model, integrate, interpolate, distribute_load!, set_slack!
 
 Create a continuous model from a discrete model by using a diffusion process to distribute the paramters.
 """
-function init_model(grid::Grid
-)::ContModel
+function init_model(grid::Grid)::ContModel
 
     # Create the dof handler and interpolation functions
     dh₁ = DofHandler(grid)
@@ -28,15 +27,13 @@ function init_model(grid::Grid
     bx, by = ones(ndofs(dh₁)), ones(ndofs(dh₁))
     by = ones(ndofs(dh₁))
     id_slack = 0
-    disc_proj, q_proj = spzeros(0,0), spzeros(0,0)
+    disc_proj, q_proj = spzeros(0, 0), spzeros(0, 0)
     return ContModel(grid, dh₁, dh₂, cellvalues, area, m, d, p, bx, by,
         θ₀, dp, id_slack, disc_proj, q_proj)
 end
 
-
 function set_slack!(cm::ContModel,
-    dm::DiscModel
-)
+    dm::DiscModel)
     node_coords = [cm.dh₁.grid.nodes[i].x for i in 1:size(cm.dh₁.grid.nodes, 1)]
     disc_slack = [Ferrite.Vec(dm.coord[dm.id_slack, :]...)]
     id_slack = argmin(norm.(node_coords .- disc_slack))
@@ -49,10 +46,8 @@ function set_slack!(cm::ContModel,
     nothing
 end
 
-
 function distribute_load!(cm::ContModel,
-    dm::DiscModel
-)
+    dm::DiscModel)
     cm.p[:] .= 0.0
     grid_coords = [node.x for node in cm.grid.nodes]
     ip = cm.dh₁.field_interpolations[1]
@@ -71,12 +66,12 @@ function distribute_load!(cm::ContModel,
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
-            cm.p[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]  
+            cm.p[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]
         end
     end
 
     for (i, ix) in enumerate(dm.id_gen)
-        coord = dm.coord[ix,:]
+        coord = dm.coord[ix, :]
         point = Ferrite.Vec(coord...)
         ph = PointEvalHandler(cm.grid, [point], warn = :false)
         if ph.cells[1] === nothing
@@ -88,12 +83,10 @@ function distribute_load!(cm::ContModel,
         cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
-            cm.p[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]  
+            cm.p[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]
         end
     end
 end
-
-
 
 """
     integrate(dh::DofHandler, cellvalues::CellScalarValues, f::Function)::Real

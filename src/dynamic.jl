@@ -382,9 +382,7 @@ function simul(disc_sol::ODESolution,
     u₀::Vector{T},
     tf::Real;
     cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}()
-)::Tuple{Vector{T}, T} where {T <: Real}
-
+    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{T}, T} where {T <: Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
@@ -472,8 +470,7 @@ function update(p::Vector{T},
     g::Vector{T},
     eve::Matrix{T},
     i::Integer,
-    f::Function
-)::Vector{T} where {T <: Real}
+    f::Function)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)

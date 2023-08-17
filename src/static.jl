@@ -1,4 +1,4 @@
-export learn_susceptances
+export learn_susceptances, learn_susceptances_dates
 
 """
 $(TYPEDSIGNATURES)
@@ -24,6 +24,32 @@ function load_discrete_models(foldername::String,
     return dms
 end
 
+function discrete_models_entsoe(pm::Dict{String, Any},
+    f_date::DateTime,
+    t_date::DateTime;
+    scale_factor::Real = 0)
+    df = DataFrame(CSV.File(MODULE_FOLDER * "/data/entsoe.csv"))
+    t_range = f_date:Hour(1):t_date
+    dms = Vector{DiscModel}(undef, size(t_range, 1))
+    for (i, t) in enumerate(t_range)
+        ix = findfirst(df[:, :Date] .== t)
+        country = Dict{String, Float64}()
+        for name in names(df)
+            if name == "Date"
+                continue
+            end
+            country[name] = df[ix, name]
+        end
+        pm = opf_from_country(pm, country)
+        if scale_factor > 0
+            dms[i] = load_discrete_model_from_powermodels(pm, true, scale_factor)
+        else
+            dms[i] = load_discrete_model_from_powermodels(pm, false, scale_factor)
+        end
+    end
+    return dms
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -41,8 +67,7 @@ Assemble the force vectors for the static solutions.
 function assemble_f_static(model::ContModel,
     dataset::Vector{DiscModel},
     Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC
-)::Matrix{<:Real}
+    q_proj::SparseMatrixCSC)::Matrix{<:Real}
     f = zeros(ndofs(model.dh₁), length(dataset))
 
     for (i, dm) in enumerate(dataset)
@@ -87,11 +112,10 @@ function assemble_matrices_static(model::ContModel)::Tuple{
     n_quad = getnquadpoints(model.cellvalues)
     n_dofs = ndofs(model.dh₁)
 
-    q_coords = zeros(n_quad * n_cell, 2)
     Af = spzeros(n_dofs, n_quad * n_cell)
     Ak = spzeros(n_dofs, 2 * n_quad * n_cell)
     ix = 1
-    for (j, cell) in enumerate(CellIterator(model.dh₁))
+    for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
         for q in 1:getnquadpoints(model.cellvalues)
@@ -128,9 +152,7 @@ The returned matrices are
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
 function projectors_static(model::ContModel,
-    dm::DiscModel,
-)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
-    
+    dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
     interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
     n_dofs = ndofs(model.dh₁)
@@ -158,11 +180,10 @@ function projectors_static(model::ContModel,
     end
 
     ix = 1
-    for (i, cell) in enumerate(CellIterator(model.dh₁))
+    for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
         cell_dofs = celldofs(cell)
         for q in 1:getnquadpoints(model.cellvalues)
-            dΩ = getdetJdV(model.cellvalues, q)
             point = spatial_coordinate(model.cellvalues,
                 q, getcoordinates(cell))
             ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
@@ -276,15 +297,67 @@ function learn_susceptances(;
 
     f_train = assemble_f_static(model, train, Af, q_proj)
     th_train = assemble_disc_theta(train)
-    
+
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
 
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
         th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
 
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
-    model.θ₀ = K \ f_train[:,1]
-    
+    model.θ₀ = K \ f_train[:, 1]
+
+    f_test = assemble_f_static(model, test, Af, q_proj)
+    th_test = assemble_disc_theta(test)
+    train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
+    train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
+
+    model.bx = b[1:2:end]
+    model.by = b[2:2:end]
+    model.disc_proj = disc_proj
+    model.q_proj = q_proj
+
+    return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
+        train_losses, test_losses, model)
+end
+
+function learn_susceptances_dates(;
+    model_file::String = MODULE_FOLDER * "/data/pantagruel.json",
+    train_f_date::DateTime = DateTime(2021, 9, 17, 0),
+    train_t_date::DateTime = DateTime(2021, 9, 18, 23),
+    test_f_date::DateTime = DateTime(2021, 10, 17, 0),
+    test_t_date::DateTime = DateTime(2021, 10, 17, 11),
+    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+    n_epoch::Int = 10000,
+    n_batch::Int = 3,
+    rng::AbstractRNG = Xoshiro(123),
+    opt = ADAM(0.1),
+    bmin::Real = 0.1,
+    δ = 0.5)::StaticSol
+    mesh, scale_factor = get_mesh(mesh_fn)
+    pm = parse_file(model_file)
+    train = discrete_models_entsoe(pm,
+        train_f_date,
+        train_t_date,
+        scale_factor = scale_factor)
+    test = discrete_models_entsoe(pm, test_f_date, test_t_date, scale_factor = scale_factor)
+    @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
+
+    model = init_model(mesh)
+    set_slack!(model, train[1])
+    Af, Ak, Islack = assemble_matrices_static(model)
+    disc_proj, q_proj, q_proj_b = projectors_static(model, train[1])
+
+    f_train = assemble_f_static(model, train, Af, q_proj)
+    th_train = assemble_disc_theta(train)
+
+    binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
+
+    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
+        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
+
+    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
+    model.θ₀ = K \ f_train[:, 1]
+
     f_test = assemble_f_static(model, test, Af, q_proj)
     th_test = assemble_disc_theta(test)
     train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
@@ -307,7 +380,7 @@ Obtain the prediction of the stable solution for the training and test data sets
 function prediction(K::AbstractSparseMatrix,
     f_train::Matrix{T},
     f_test::Matrix{T},
-    proj::AbstractSparseMatrix)::Tuple{Matrix{T}, Matrix{T}} where {T<:Real}
+    proj::AbstractSparseMatrix)::Tuple{Matrix{T}, Matrix{T}} where {T <: Real}
     return proj * (K \ f_train), proj * (K \ f_test)
 end
 

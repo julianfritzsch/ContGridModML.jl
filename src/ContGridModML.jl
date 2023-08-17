@@ -3,7 +3,7 @@ module ContGridModML
 using LinearAlgebra, Ferrite, FerriteGmsh, FerriteViz, CairoMakie,
     Ferrite, Gmsh, SparseArrays, Flux, Random, HDF5, BlockArrays,
     StatsBase, OrdinaryDiffEq, JuMP, Gurobi, Base.Threads,
-    DocStringExtensions
+    DocStringExtensions, JSON3, PowerModels, Dates, DataFrames, CSV
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
 
