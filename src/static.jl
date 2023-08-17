@@ -7,8 +7,6 @@ Load all the discrete models for the training and test data sets.
 """
 function discrete_models(train_folder::String,
     test_folder::String,
-    n_train::Integer,
-    n_test::Integer,
     scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
@@ -66,13 +64,12 @@ Assemble the force vectors for the static solutions.
 """
 function assemble_f_static(model::ContModel,
     dataset::Vector{DiscModel},
-    Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC)::Matrix{<:Real}
+    Af::SparseMatrixCSC)::Matrix{<:Real}
     f = zeros(ndofs(model.dh₁), length(dataset))
 
     for (i, dm) in enumerate(dataset)
         distribute_load!(model, dm)
-        f[:, i] = Af * q_proj * model.p
+        f[:, i] = Af * model.q_proj * model.p
     end
 
     return f
@@ -147,7 +144,6 @@ Projectors of nodal values onto the discrete values and the quadrature points.
 
 The returned matrices are
 - `θ_proj` project the nodal values onto the discrete nodes for comparison
-- `q_proj` project the nodal values onto the quadrature points
 - `q_proj_b` project the susceptances onto the quadrature points. The susceptances need to 
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
@@ -158,7 +154,6 @@ function projectors_static(model::ContModel,
     n_dofs = ndofs(model.dh₁)
     n_cell_dofs = length(model.dh₁.cell_dofs)
     θ_proj = spzeros(dm.Nbus, n_dofs)
-    q_proj = spzeros(n_cell_dofs, n_dofs)
     q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
 
     for (i, point) in enumerate(eachrow(dm.coord))
@@ -189,14 +184,13 @@ function projectors_static(model::ContModel,
             ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
             pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
             for j in 1:getnbasefunctions(model.cellvalues)
-                q_proj[ix, cell_dofs[j]] = pv.N[j]
                 q_proj_b[2 * ix - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
                 q_proj_b[2 * ix, 2 * cell_dofs[j]] = pv.N[j]
             end
             ix += 1
         end
     end
-    return θ_proj, q_proj, q_proj_b
+    return θ_proj, q_proj_b
 end
 
 """
@@ -293,9 +287,9 @@ function learn_susceptances(;
     model = init_model(mesh)
     set_slack!(model, train[1])
     Af, Ak, Islack = assemble_matrices_static(model)
-    disc_proj, q_proj, q_proj_b = projectors_static(model, train[1])
+    disc_proj, q_proj_b = projectors_static(model, train[1])
 
-    f_train = assemble_f_static(model, train, Af, q_proj)
+    f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
@@ -306,7 +300,7 @@ function learn_susceptances(;
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
 
-    f_test = assemble_f_static(model, test, Af, q_proj)
+    f_test = assemble_f_static(model, test, Af)
     th_test = assemble_disc_theta(test)
     train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
     train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
@@ -314,7 +308,6 @@ function learn_susceptances(;
     model.bx = b[1:2:end]
     model.by = b[2:2:end]
     model.disc_proj = disc_proj
-    model.q_proj = q_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
         train_losses, test_losses, model)
@@ -345,9 +338,9 @@ function learn_susceptances_dates(;
     model = init_model(mesh)
     set_slack!(model, train[1])
     Af, Ak, Islack = assemble_matrices_static(model)
-    disc_proj, q_proj, q_proj_b = projectors_static(model, train[1])
+    disc_proj, q_proj_b = projectors_static(model, train[1])
 
-    f_train = assemble_f_static(model, train, Af, q_proj)
+    f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
     binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
@@ -358,7 +351,7 @@ function learn_susceptances_dates(;
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
 
-    f_test = assemble_f_static(model, test, Af, q_proj)
+    f_test = assemble_f_static(model, test, Af)
     th_test = assemble_disc_theta(test)
     train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
     train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
@@ -366,7 +359,6 @@ function learn_susceptances_dates(;
     model.bx = b[1:2:end]
     model.by = b[2:2:end]
     model.disc_proj = disc_proj
-    model.q_proj = q_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
         train_losses, test_losses, model)
