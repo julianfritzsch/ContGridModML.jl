@@ -57,9 +57,9 @@ $(TYPEDSIGNATURES)
 Turn a solution into a dict.
 """
 function sol_to_dict(sol::ContSol)::Dict{String, <:Any}
-    if typeof(sol) === StaticSol
+    if typeof(sol) <: StaticSol
         return static_to_dict(sol)
-    elseif typeof(sol) === DynamicSol
+    elseif typeof(sol) <: DynamicSol
         return dynamic_to_dict(sol)
     end
 end

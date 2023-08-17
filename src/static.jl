@@ -148,7 +148,7 @@ The returned matrices are
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
 function projectors_static(model::ContModel,
-    dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
     interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
     n_dofs = ndofs(model.dh₁)
