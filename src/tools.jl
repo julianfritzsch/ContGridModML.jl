@@ -227,10 +227,8 @@ function cont_from_dict(data::Dict{String, <:Any})::ContModel
     points = [Ferrite.Vec(x...) for x in eachrow(data["cellvalues"]["points"])]
     qr = eval(Meta.parse(data["cellvalues"]["type"]))(data["cellvalues"]["weights"], points)
     cv = CellScalarValues(qr, eval(Meta.parse(data["cellvalues"]["ip"])))
-    db = Dirichlet(:u, Set(data["ch"]["slack"]), (x) -> 0)
-    ch = ConstraintHandler(dh₁)
-    add!(ch, db)
-    close!(ch)
+    q_proj = dict_to_sparse(data["matrices"]["q_proj"])
+    disc_proj = dict_to_sparse(data["matrices"]["disc_proj"])
     return ContModel(grid,
         dh₁,
         dh₂,
@@ -243,7 +241,9 @@ function cont_from_dict(data::Dict{String, <:Any})::ContModel
         data["values"]["by"],
         data["values"]["t"],
         data["values"]["fault"],
-        ch)
+        data["ch"]["slack"],
+        disc_proj,
+        q_proj)
 end
 
 function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
@@ -274,23 +274,36 @@ function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
     re["cellvalues"]["points"] = points
     re["cellvalues"]["weights"] = weights
 
-    slack = cm.ch.dbcs[1].local_face_dofs[1]
+    slack = cm.id_slack
     re["ch"] = Dict{String, Any}()
     re["ch"]["slack"] = slack
 
     re["values"] = Dict{String, Any}()
     re["values"]["area"] = cm.area
-    re["values"]["m"] = cm.m_nodal
-    re["values"]["d"] = cm.d_nodal
-    re["values"]["p"] = cm.p_nodal
-    re["values"]["bx"] = cm.bx_nodal
-    re["values"]["by"] = cm.by_nodal
-    re["values"]["fault"] = cm.fault_nodal
-    re["values"]["t"] = cm.θ₀_nodal
+    re["values"]["m"] = cm.m
+    re["values"]["d"] = cm.d
+    re["values"]["p"] = cm.p
+    re["values"]["bx"] = cm.bx
+    re["values"]["by"] = cm.by
+    re["values"]["fault"] = cm.fault
+    re["values"]["t"] = cm.θ₀
+
+    re["matrices"] = Dict{String, Any}()
+    re["matrices"]["q_proj"] = sparse_to_dict(cm.q_proj)
+    re["matrices"]["disc_proj"] = sparse_to_dict(cm.disc_proj)
 
     re["model"] = "ContModel"
 
     return re
+end
+
+function sparse_to_dict(sm::SparseMatrixCSC)::Dict{String, <:Any}
+    re = Dict(string(key) => getfield(sm, key) for key in fieldnames(SparseMatrixCSC))
+    return re
+end
+
+function dict_to_sparse(dict::Dict{String, Any})::SparseMatrixCSC
+    return SparseMatrixCSC([dict[string(key)] for key in fieldnames(SparseMatrixCSC)]...)
 end
 
 function disc_to_dict(dm::DiscModel)::Dict{String, <:Any}
@@ -300,7 +313,7 @@ function disc_to_dict(dm::DiscModel)::Dict{String, <:Any}
 end
 
 function model_to_dict(model::GridModel)::Dict{String, <:Any}
-    if typeof(model) === ContModel
+    if typeof(model) <: ContModel
         return cont_to_dict(model)
     else
         return disc_to_dict(model)
