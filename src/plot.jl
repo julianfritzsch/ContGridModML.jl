@@ -3,19 +3,19 @@ export nodal_plot
 function nodal_plot(model::ContModel,
     fieldname::Symbol;
     kwargs...)::Figure
-    val = Vector{Real}(getfield(model, Symbol(string(fieldname) * "_nodal")))
+    val = Vector{Real}(getfield(model, Symbol(string(fieldname))))
     nodal_plot(model, val; kwargs...)
 end
 
 function nodal_plot(model::ContModel,
-    val::Vector{Real};
+    val::Vector{<:Real};
     logarithmic::Bool = false,
     colormap::Symbol = :inferno,
     colorbar::Bool = true,
     decorations::Bool = false,
-    fig_args::Dict{Symbol, Any} = Dict{Symbol, Any}(),
-    ax_args::Dict{Symbol, Any} = Dict{Symbol, Any}(),
-    cbar_args::Dict{Symbol, Any} = Dict{Symbol, Any}())::Figure
+    fig_args::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
+    ax_args::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
+    cbar_args::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Figure
     f = Figure(; fig_args...)
     ax = Axis(f[1, 1]; ax_args...)
 
