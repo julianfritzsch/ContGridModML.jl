@@ -122,6 +122,10 @@ end
 
 function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real)::Nothing
     fault = zeros(ndofs(cm.dh₁))
+    if abs(dP) < 1e-10
+        cm.fault[:] .= fault
+        return nothing
+    end
     grid_coords = [node.x for node in cm.grid.nodes]
     ip = cm.dh₁.field_interpolations[1]
     # assuming that fault(x) is a delta function
@@ -138,7 +142,7 @@ function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real):
     cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
     Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
     for j in 1:getnbasefunctions(cm.cellvalues)
-        fault[cell_dofs[j]] -= dP * pv.N[j]
+        fault[cell_dofs[j]] += dP * pv.N[j]
     end
 
     # Normalize values

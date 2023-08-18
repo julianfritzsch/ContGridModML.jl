@@ -149,12 +149,14 @@ The returned matrices are
 """
 function projectors_static(model::ContModel,
     dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
+    return projectors_static_θ(model, dm), projectors_static_b(model)
+end
+
+function projectors_static_θ(model::ContModel, dm::DiscModel)::SparseMatrixCSC
     interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
     n_dofs = ndofs(model.dh₁)
-    n_cell_dofs = length(model.dh₁.cell_dofs)
     θ_proj = spzeros(dm.Nbus, n_dofs)
-    q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
 
     for (i, point) in enumerate(eachrow(dm.coord))
         point = Ferrite.Vec(point...)
@@ -173,7 +175,14 @@ function projectors_static(model::ContModel,
             θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
+    return θ_proj
+end
 
+function projectors_static_b(model::ContModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
+    n_dofs = ndofs(model.dh₁)
+    n_cell_dofs = length(model.dh₁.cell_dofs)
+    q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
     ix = 1
     for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
@@ -190,7 +199,7 @@ function projectors_static(model::ContModel,
             ix += 1
         end
     end
-    return θ_proj, q_proj_b
+    return q_proj_b
 end
 
 """
@@ -358,6 +367,7 @@ function learn_susceptances_dates(;
 
     model.bx = b[1:2:end]
     model.by = b[2:2:end]
+    distribute_load!(model, train[1])
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,

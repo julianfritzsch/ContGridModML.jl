@@ -224,6 +224,7 @@ function cont_from_dict(data::Dict{String, <:Any})::ContModel
     add!(dh₂, :ω, eval(Meta.parse(data["dh"]["oi"])))
     close!(dh₁)
     close!(dh₂)
+    renumber!(dh₂, DofOrder.FieldWise())
     points = [Ferrite.Vec(x...) for x in eachrow(data["cellvalues"]["points"])]
     qr = eval(Meta.parse(data["cellvalues"]["type"]))(data["cellvalues"]["weights"], points)
     cv = CellScalarValues(qr, eval(Meta.parse(data["cellvalues"]["ip"])))
@@ -462,4 +463,19 @@ function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real}
     end
     update_data!(grid, result["solution"])
     return remove_nan(grid)
+end
+
+function stable_sol!(cm::ContModel)
+    if cm.id_slack == 0
+        println("Slack bus not set, setting it to 1")
+        cm.id_slack = 1
+    end
+    Af, Ak, Islack = assemble_matrices_static(cm)
+    q_proj = projectors_static_b(cm)
+    b = zeros(2 * ndofs(cm.dh₁))
+    b[1:2:end] = cm.bx
+    b[2:2:end] = cm.by
+    K = Ak * spdiagm(q_proj * b) * Ak' + Islack
+    cm.θ₀[:] = K \ (Af * cm.q_proj * cm.p)
+    return nothing
 end

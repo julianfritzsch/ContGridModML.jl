@@ -229,14 +229,7 @@ Create the initial conditions for the continuous simulations.
 """
 function initial_conditions(cm::ContModel)::Vector{<:Real}
     stable_sol!(cm)
-    ch = ConstraintHandler(cm.dh₂)
-    db = Dirichlet(:θ, Set(1:getnnodes(cm.grid)), (x, t) -> cm.θ₀(x))
-    add!(ch, db)
-    close!(ch)
-    update!(ch)
-    u₀ = zeros(ndofs(cm.dh₂))
-    apply!(u₀, ch)
-    return u₀
+    return [cm.θ₀; zeros(ndofs(cm.dh₁))]
 end
 
 """
@@ -311,8 +304,8 @@ function init_expansion(cm::ContModel,
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
-        coeffs[i] = cm.m_nodal' * eve[:, i]
-        coeffs[i + n_modes] = cm.d_nodal' * eve[:, i]
+        coeffs[i] = cm.m' * eve[:, i]
+        coeffs[i + n_modes] = cm.d' * eve[:, i]
     end
     return coeffs, eve[:, 1:n_modes]
 end
@@ -514,8 +507,8 @@ function learn_dynamical_parameters(;
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
     end
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
-    M, K, A, Af, q_coords = assemble_matrices_dynamic(cm)
-    q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
+    M, K, A, Af = assemble_matrices_dynamic(cm)
+    ω_proj = projectors_dynamic(cm, dm, comp_idxs)
     disc_sols_train = Vector{ODESolution}()
     disc_sols_test = Vector{ODESolution}()
     for i in train_ix
@@ -525,13 +518,13 @@ function learn_dynamical_parameters(;
     for i in test_ix
         push!(disc_sols_test, disc_dyn(dm, i, dP, dt, tf, solve_kwargs = disc_solve_kwargs))
     end
-    f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af, q_proj, σ)
-    f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af, q_proj, σ)
+    f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af)
+    f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af)
     eve = lap_eigenvectors(cm)
     p, eve_p = init_expansion(cm, eve, n_modes, n_coeffs)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
-    g_proj = grad_proj(A, q_proj, eve_p, n_modes)
+    g_proj = grad_proj(A, cm.q_proj, eve_p, n_modes)
     u₀ = initial_conditions(cm)
     for i in 1:n_epochs
         println("Epoch $i")
@@ -539,7 +532,7 @@ function learn_dynamical_parameters(;
         d = eve_p * p[(n_modes + 1):end]
         @threads for j in 1:n_train
             g, l = simul(disc_sols_train[j], M, K, m, d, f_train[:, j],
-                A, q_proj, ω_proj, g_proj, comp_idxs, u₀, tf,
+                A, cm.q_proj, ω_proj, g_proj, comp_idxs, u₀, tf,
                 cont_kwargs = cont_solve_kwargs,
                 lambda_kwargs = lambda_solve_kwargs)
             grads[:, j] .= g
@@ -551,9 +544,9 @@ function learn_dynamical_parameters(;
     m = eve_p * p[1:n_modes]
     d = eve_p * p[(n_modes + 1):end]
     test_losses = test_loss(disc_sols_test, M, K, m, d, f_test, A,
-        q_proj, ω_proj, comp_idxs, u₀, tf, cont_kwargs = cont_solve_kwargs)
-    update_model!(cm, :m, m)
-    update_model!(cm, :d, d)
+        cm.q_proj, ω_proj, comp_idxs, u₀, tf, cont_kwargs = cont_solve_kwargs)
+    cm.m = m
+    cm.d = d
 
     return DynamicSol(train_ix, test_ix, comp_idxs, m, d, p, eve,
         losses, losses[end, :], test_losses, cm)
