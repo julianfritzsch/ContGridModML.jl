@@ -12,73 +12,50 @@ The matrices returned are
     matrices. For example the mass matrix can be calculated as 
     `M = M_const + A * m_quad * A'`
 - `Af` the matrix needed to create the force vector as `f = Af * (p_quad + fault_quad)`
-- `q_coords` Coordinates of all quadrature points in the same order as stored in the 
-    DoF-handler
 """
-function assemble_matrices_dynamic(model::ContGridMod.ContModel)::Tuple{
+function assemble_matrices_dynamic(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
-    Array{<:Real, 2},
 }
-    K_const = create_sparsity_pattern(model.dh₂)
-    M_const = create_sparsity_pattern(model.dh₂)
-    A = zeros(ndofs(model.dh₂),
+    ndof = ndofs(model.dh)
+    K_const = spzeros(2 * ndof, 2 * ndof)
+    M_const = spzeros(2 * ndof, 2 * ndof)
+    A = spzeros(2 * ndof,
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    Af = zeros(ndofs(model.dh₂),
+    Af = spzeros(2 * ndof,
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    dofr = dof_range(model.dh₂, :ω)
-    q_coords = zeros(getnquadpoints(model.cellvalues) * size(model.grid.cells, 1), 2)
     n_basefuncs_θ = getnbasefunctions(model.cellvalues)
     n_basefuncs_ω = getnbasefunctions(model.cellvalues)
-    n_basefuncs = n_basefuncs_θ + n_basefuncs_ω
-    θ▄, ω▄ = 1, 2
+    bx = model.q_proj * model.bx
+    by = model.q_proj * model.by
 
-    Kₑ = PseudoBlockArray(zeros(n_basefuncs, n_basefuncs),
-        [n_basefuncs_θ, n_basefuncs_ω],
-        [n_basefuncs_θ, n_basefuncs_ω])
-    Mₑ = PseudoBlockArray(zeros(n_basefuncs, n_basefuncs),
-        [n_basefuncs_θ, n_basefuncs_ω],
-        [n_basefuncs_θ, n_basefuncs_ω])
-
-    assembler_K = start_assemble(K_const)
-    assembler_M = start_assemble(M_const)
-
-    for (ix, cell) in enumerate(CellIterator(model.dh₂))
-        fill!(Kₑ, 0)
-        fill!(Mₑ, 0)
-
+    q_ix = 1
+    for cell in CellIterator(model.dh)
         Ferrite.reinit!(model.cellvalues, cell)
 
         dofs = celldofs(cell)
         for q_point in 1:getnquadpoints(model.cellvalues)
-            x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
-            b = SparseMatrixCSC(diagm([model.bx(x), model.by(x)]))
+            b = spdiagm([bx[q_ix], by[q_ix]])
             dΩ = getdetJdV(model.cellvalues, q_point)
-            idx = (ix - 1) * getnquadpoints(model.cellvalues) + q_point
-            q_coords[idx, :] = x
             for i in 1:n_basefuncs_θ
                 φᵢ = shape_value(model.cellvalues, q_point, i)
                 ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                A[dofs[dofr[i]], idx] = φᵢ * sqrt(dΩ)
-                Af[dofs[dofr[i]], idx] = φᵢ * dΩ
+                A[dofs[i] + ndof, q_ix] = φᵢ * sqrt(dΩ)
+                Af[dofs[i] + ndof, q_ix] = φᵢ * dΩ
                 for j in 1:n_basefuncs_ω
                     φⱼ = shape_value(model.cellvalues, q_point, j)
                     ∇φⱼ = shape_gradient(model.cellvalues, q_point, j)
-                    Kₑ[BlockIndex((θ▄, ω▄), (i, j))] += φᵢ ⋅ φⱼ * dΩ
-                    Kₑ[BlockIndex((ω▄, θ▄), (i, j))] -= ∇φᵢ ⋅ (b * ∇φⱼ) * dΩ
-                    Mₑ[BlockIndex((θ▄, θ▄), (i, j))] += φᵢ ⋅ φⱼ * dΩ
+                    K_const[dofs[i], dofs[j] + ndof] += φᵢ ⋅ φⱼ * dΩ
+                    K_const[dofs[i] + ndof, dofs[j]] -= ∇φᵢ ⋅ (b * ∇φⱼ) * dΩ
+                    M_const[dofs[i], dofs[j]] += φᵢ ⋅ φⱼ * dΩ
                 end
             end
+            q_ix += 1
         end
-
-        assemble!(assembler_K, celldofs(cell), Kₑ)
-        assemble!(assembler_M, celldofs(cell), Mₑ)
     end
-    dropzeros!(K_const)
-    dropzeros!(M_const)
-    return M_const, K_const, sparse(A), sparse(Af), q_coords
+    return M_const, K_const, A, Af
 end
 
 """
@@ -91,17 +68,15 @@ Returned projectors
 - `ω_proj` Project the nodal values onto the given comparison points. This is used to
     calculate the loss function.
 """
-function projectors_dynamic(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
-    q_coords::Array{<:Real, 2},
-    ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
+function projectors_dynamic(cm::ContModel,
+    dm::DiscModel,
+    ω_idxs::Vector{<:Integer})::SparseMatrixCSC
+    func_interpolations = Ferrite.get_func_interpolations(cm.dh, :u)
     grid_coords = [node.x for node in cm.grid.nodes]
-    dofr = dof_range(cm.dh₂, :ω)
     n_base_funcs = getnbasefunctions(cm.cellvalues)
 
-    q_proj = zeros(size(q_coords, 1), ndofs(cm.dh₂) ÷ 2)
-    ω_proj = zeros(size(ω_idxs, 1), ndofs(cm.dh₂))
+    ndof = ndofs(cm.dh)
+    ω_proj = spzeros(size(ω_idxs, 1), 2 * ndof)
     for (i, point) in enumerate(eachrow(dm.coord[ω_idxs, :]))
         ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)], warn = :false)
         if ph.cells[1] === nothing
@@ -110,29 +85,13 @@ function projectors_dynamic(cm::ContGridMod.ContModel,
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
+        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
         for j in 1:n_base_funcs
-            ω_proj[i, cell_dofs[dofr[j]]] = pv.N[j]
+            ω_proj[i, cell_dofs[j] + ndof] = pv.N[j]
         end
     end
-    omega_dofs = Set{Integer}()
-    for i in 1:size(cm.grid.cells, 1)
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, i))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, i)
-        push!(omega_dofs, cell_dofs[dofr]...)
-    end
-    odofs_dict = Dict(j => i for (i, j) in enumerate(sort(collect(omega_dofs))))
-    for (i, point) in enumerate(eachrow(q_coords))
-        ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)])
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
-        for j in 1:n_base_funcs
-            q_proj[i, odofs_dict[cell_dofs[dofr[j]]]] = pv.N[j]
-        end
-    end
-    return sparse(q_proj), sparse(ω_proj)
+    return ω_proj
 end
 
 """
@@ -140,24 +99,22 @@ $(TYPEDSIGNATURES)
 
 Assemble all the force vectors for the dynamical simulations.
 """
-function assemble_f_dynamic(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function assemble_f_dynamic(cm::ContModel,
+    dm::DiscModel,
     fault_ix::Vector{<:Integer},
     dP::Union{Real, Vector{<:Real}},
-    Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC,
-    σ::Real)::Array{<:Real, 2}
+    Af::SparseMatrixCSC)::Matrix{<:Real}
     @assert size(fault_ix) == size(dP)||isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
         dP = dP .* ones(size(fault_ix, 1))
     end
-    f_old = cm.fault_nodal
-    f = zeros(ndofs(cm.dh₂), size(fault_ix, 1))
+    f_old = cm.fault
+    f = zeros(2 * ndofs(cm.dh), size(fault_ix, 1))
     for (i, (ix, p)) in enumerate(zip(fault_ix, dP))
-        add_local_disturbance!(cm, dm.coord[ix, :], p, σ)
-        f[:, i] = Af * q_proj * (cm.p_nodal .+ cm.fault_nodal)
+        set_local_disturbance!(cm, dm.coord[ix, :], p)
+        f[:, i] = Af * cm.q_proj * (cm.p .+ cm.fault)
     end
-    cm.fault_nodal = f_old
+    cm.fault = f_old
     return f
 end
 
@@ -173,8 +130,8 @@ of the test and training set are not eligible for comparison and are remove from
 possible indices. The number of points can be controlled by `n`, which gives the number of
 points in the largest dimension.
 """
-function generate_comp_idxs(cm::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
+function generate_comp_idxs(cm::ContModel,
+    dm::DiscModel,
     tri::Vector{<:Integer},
     tei::Vector{<:Integer},
     n::Int)::Vector{<:Integer}
@@ -184,7 +141,7 @@ function generate_comp_idxs(cm::ContGridMod.ContModel,
     dx = max((x_max - x_min) / n, (y_max - y_min) / n)
     for i in x_min:dx:x_max
         for j in y_min:dx:y_max
-            ph = PointEvalHandler(cm.dh₁.grid,
+            ph = PointEvalHandler(cm.dh.grid,
                 [Ferrite.Vec(i, j)],
                 warn = false)
             if ph.cells[1] !== nothing
@@ -206,7 +163,7 @@ $(TYPEDSIGNATURES)
 
 Randomly choose generators for the training and test sets.
 """
-function gen_idxs(dm::ContGridMod.DiscModel,
+function gen_idxs(dm::DiscModel,
     dP::Real,
     n_train::Integer,
     n_test::Int;
@@ -226,7 +183,7 @@ $(TYPEDSIGNATURES)
 
 Run a dynamical simulation of the discrete model.
 """
-function disc_dyn(dm::ContGridMod.DiscModel,
+function disc_dyn(dm::DiscModel,
     fault_node::Integer,
     fault_size::Real,
     dt::Real,
@@ -236,7 +193,7 @@ function disc_dyn(dm::ContGridMod.DiscModel,
         0.0,
         tf,
         fault_size,
-        faultid = fault_node,
+        fault_node,
         dt = dt,
         solve_kwargs = solve_kwargs)
 end
@@ -270,16 +227,9 @@ $(TYPEDSIGNATURES)
 
 Create the initial conditions for the continuous simulations.
 """
-function initial_conditions(cm::ContGridMod.ContModel)::Vector{<:Real}
+function initial_conditions(cm::ContModel)::Vector{<:Real}
     stable_sol!(cm)
-    ch = ConstraintHandler(cm.dh₂)
-    db = Dirichlet(:θ, Set(1:getnnodes(cm.grid)), (x, t) -> cm.θ₀(x))
-    add!(ch, db)
-    close!(ch)
-    update!(ch)
-    u₀ = zeros(ndofs(cm.dh₂))
-    apply!(u₀, ch)
-    return u₀
+    return [cm.θ₀; zeros(ndofs(cm.dh))]
 end
 
 """
@@ -321,10 +271,10 @@ $(TYPEDSIGNATURES)
 Calculate the eigenvectors of the unweighted Laplacian of the grid used for the continuous
     simulations.
 """
-function lap_eigenvectors(cm::ContGridMod.ContModel)::Array{<:Real, 2}
-    N = ndofs(cm.dh₁)
+function lap_eigenvectors(cm::ContModel)::Matrix{<:Real}
+    N = ndofs(cm.dh)
     lap = zeros(N, N)
-    for cell in CellIterator(cm.dh₁)
+    for cell in CellIterator(cm.dh)
         i, j, k = celldofs(cell)
         lap[i, j] = lap[j, i] = -1
         lap[i, k] = lap[k, i] = -1
@@ -347,15 +297,16 @@ eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by project
 results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
 set to zero.
 """
-function init_expansion(cm::ContGridMod.ContModel,
-    eve::Array{<:Real, 2},
+function init_expansion(eve::Matrix{<:Real},
     n_modes::Integer,
-    n_coeffs::Integer)::Tuple{Vector{<:Real}, Array{<:Real, 2}}
+    n_coeffs::Integer,
+    m::Vector{<:Real},
+    d::Vector{<:Real})::Tuple{Vector{<:Real}, Matrix{<:Real}}
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
-        coeffs[i] = cm.m_nodal' * eve[:, i]
-        coeffs[i + n_modes] = cm.d_nodal' * eve[:, i]
+        coeffs[i] = m' * eve[:, i]
+        coeffs[i + n_modes] = d' * eve[:, i]
     end
     return coeffs, eve[:, 1:n_modes]
 end
@@ -371,29 +322,23 @@ the gradient and value of the loss function are calculated and returned.
 function simul(disc_sol::ODESolution,
     M_const::SparseMatrixCSC,
     K_const::SparseMatrixCSC,
-    m::Vector{<:Real},
-    d::Vector{<:Real},
-    f::Vector{<:Real},
+    m::Vector{T},
+    d::Vector{T},
+    f::Vector{T},
     A::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
     ω_proj::SparseMatrixCSC,
     g_proj::Vector{SparseMatrixCSC},
     idxs::Vector{<:Integer},
-    u₀::Vector{<:Real},
+    u₀::Vector{T},
     tf::Real;
     cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{<:Real}, Real}
+    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{T}, T} where {T <: Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
-    sol_lambda = lambda_dyn(cont_sol,
-        disc_sol,
-        M,
-        K,
-        ω_proj,
-        tf,
-        idxs,
-        solve_kwargs = lambda_kwargs)
+    sol_lambda = lambda_dyn(cont_sol, disc_sol, M, K, ω_proj, tf,
+        idxs, solve_kwargs = lambda_kwargs)
     gr = grad(cont_sol, sol_lambda, g_proj)
     loss_val = loss(cont_sol, disc_sol, ω_proj, idxs)[1]
     return gr, loss_val
@@ -458,7 +403,7 @@ Calculate the projection matrix of the discrete solution onto the adjoint soluti
 """
 function grad_proj(A::SparseMatrixCSC,
     q_proj::SparseMatrixCSC,
-    evecs::Array{<:Real, 2},
+    evecs::Matrix{<:Real},
     n_coeffs::Integer)::Vector{SparseMatrixCSC}
     g_proj = Vector{SparseMatrixCSC}()
     for i in 1:n_coeffs
@@ -472,11 +417,11 @@ $(TYPEDSIGNATURES)
 
 Update the parameters using a restricted gradient descent to ensure positiveness.
 """
-function update(p::Vector{<:Real},
-    g::Vector{<:Real},
-    eve::Array{<:Real, 2},
+function update(p::Vector{T},
+    g::Vector{T},
+    eve::Matrix{T},
     i::Integer,
-    f::Function)::Vector{<:Real}
+    f::Function)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
     opt = Model(Gurobi.Optimizer)
     set_silent(opt)
@@ -546,14 +491,14 @@ function learn_dynamical_parameters(;
         :abstol => 1e-3,
         :reltol => 1e-2),
     seed::Union{Nothing, Integer} = 1709,
-    σ = 0.05,
     n_points = 40,
     n_coeffs = 1,
     n_modes = 20,
     n_epochs = 8000,
     max_function::Function = (x) -> 30 * 2^(x / 500),
     train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
+    test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
+    rng::AbstractRNG = Xoshiro(123))::DynamicSol
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
     if train_ix !== nothing && test_ix !== nothing
@@ -563,8 +508,8 @@ function learn_dynamical_parameters(;
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
     end
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
-    M, K, A, Af, q_coords = assemble_matrices_dynamic(cm)
-    q_proj, ω_proj = projectors_dynamic(cm, dm, q_coords, comp_idxs)
+    M, K, A, Af = assemble_matrices_dynamic(cm)
+    ω_proj = projectors_dynamic(cm, dm, comp_idxs)
     disc_sols_train = Vector{ODESolution}()
     disc_sols_test = Vector{ODESolution}()
     for i in train_ix
@@ -574,32 +519,23 @@ function learn_dynamical_parameters(;
     for i in test_ix
         push!(disc_sols_test, disc_dyn(dm, i, dP, dt, tf, solve_kwargs = disc_solve_kwargs))
     end
-    f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af, q_proj, σ)
-    f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af, q_proj, σ)
+    f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af)
+    f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af)
     eve = lap_eigenvectors(cm)
-    p, eve_p = init_expansion(cm, eve, n_modes, n_coeffs)
+    m_init = 300 * rand(rng, ndofs(cm.dh)) .+ 50
+    d_init = 150 * rand(rng, ndofs(cm.dh)) .+ 25
+    p, eve_p = init_expansion(eve, n_modes, n_coeffs, m_init, d_init)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
-    g_proj = grad_proj(A, q_proj, eve_p, n_modes)
+    g_proj = grad_proj(A, cm.q_proj, eve_p, n_modes)
     u₀ = initial_conditions(cm)
     for i in 1:n_epochs
         println("Epoch $i")
         m = eve_p * p[1:n_modes]
         d = eve_p * p[(n_modes + 1):end]
         @threads for j in 1:n_train
-            g, l = simul(disc_sols_train[j],
-                M,
-                K,
-                m,
-                d,
-                f_train[:, j],
-                A,
-                q_proj,
-                ω_proj,
-                g_proj,
-                comp_idxs,
-                u₀,
-                tf,
+            g, l = simul(disc_sols_train[j], M, K, m, d, f_train[:, j],
+                A, cm.q_proj, ω_proj, g_proj, comp_idxs, u₀, tf,
                 cont_kwargs = cont_solve_kwargs,
                 lambda_kwargs = lambda_solve_kwargs)
             grads[:, j] .= g
@@ -610,33 +546,13 @@ function learn_dynamical_parameters(;
     end
     m = eve_p * p[1:n_modes]
     d = eve_p * p[(n_modes + 1):end]
-    test_losses = test_loss(disc_sols_test,
-        M,
-        K,
-        m,
-        d,
-        f_test,
-        A,
-        q_proj,
-        ω_proj,
-        comp_idxs,
-        u₀,
-        tf,
-        cont_kwargs = cont_solve_kwargs)
-    update_model!(cm, :m, m)
-    update_model!(cm, :d, d)
+    test_losses = test_loss(disc_sols_test, M, K, m, d, f_test, A,
+        cm.q_proj, ω_proj, comp_idxs, u₀, tf, cont_kwargs = cont_solve_kwargs)
+    cm.m = m
+    cm.d = d
 
-    return DynamicSol(train_ix,
-        test_ix,
-        comp_idxs,
-        m,
-        d,
-        p,
-        eve,
-        losses,
-        losses[end, :],
-        test_losses,
-        cm)
+    return DynamicSol(train_ix, test_ix, comp_idxs, m, d, p, eve,
+        losses, losses[end, :], test_losses, cm)
 end
 
 """

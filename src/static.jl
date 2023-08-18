@@ -1,24 +1,51 @@
-export learn_susceptances
+export learn_susceptances, learn_susceptances_dates
 
 """
 $(TYPEDSIGNATURES)
 
 Load all the discrete models for the training and test data sets.
 """
-function discrete_models(train_fn::String,
-    test_fn::String,
-    n_train::Integer,
-    n_test::Integer,
-    scale_factor::Real)::Tuple{Vector{ContGridMod.DiscModel}, Vector{ContGridMod.DiscModel}}
-    training = ContGridMod.DiscModel[]
-    test = ContGridMod.DiscModel[]
-    for i in 1:n_train
-        push!(training, load_discrete_model(train_fn * string(i) * ".h5", scale_factor))
+function discrete_models(train_folder::String,
+    test_folder::String,
+    scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
+    train = load_discrete_models(train_folder, scale_factor)
+    test = load_discrete_models(test_folder, scale_factor)
+    return train, test
+end
+
+function load_discrete_models(foldername::String,
+    scale_factor::Real)::Vector{DiscModel}
+    dms = DiscModel[]
+    for fn in joinpath.(foldername, readdir(foldername))
+        push!(dms, load_discrete_model(fn, scale_factor))
     end
-    for i in 1:n_test
-        push!(test, load_discrete_model(test_fn * string(i) * ".h5", scale_factor))
+    return dms
+end
+
+function discrete_models_entsoe(pm::Dict{String, Any},
+    f_date::DateTime,
+    t_date::DateTime;
+    scale_factor::Real = 0)
+    df = DataFrame(CSV.File(MODULE_FOLDER * "/data/entsoe.csv"))
+    t_range = f_date:Hour(1):t_date
+    dms = Vector{DiscModel}(undef, size(t_range, 1))
+    for (i, t) in enumerate(t_range)
+        ix = findfirst(df[:, :Date] .== t)
+        country = Dict{String, Float64}()
+        for name in names(df)
+            if name == "Date"
+                continue
+            end
+            country[name] = df[ix, name]
+        end
+        pm = opf_from_country(pm, country)
+        if scale_factor > 0
+            dms[i] = load_discrete_model_from_powermodels(pm, true, scale_factor)
+        else
+            dms[i] = load_discrete_model_from_powermodels(pm, false, scale_factor)
+        end
     end
-    return training, test
+    return dms
 end
 
 """
@@ -26,17 +53,8 @@ $(TYPEDSIGNATURES)
 
 Check if all the slack buses in the training and test data sets are the same.
 """
-function check_slack(training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel})::Bool
-    slack = training[1].id_slack
-    re = false
-    for i in 2:size(training, 1)
-        re = training[i].id_slack == slack
-    end
-    for i in 1:size(test, 1)
-        re = test[i].id_slack == slack
-    end
-    return re
+function check_slack(dataset::Vector{DiscModel})::Bool
+    unique(dataset .|> d -> d.id_slack) |> length == 1
 end
 
 """
@@ -44,27 +62,17 @@ $(TYPEDSIGNATURES)
 
 Assemble the force vectors for the static solutions.
 """
-function assemble_f_static(model::ContGridMod.ContModel,
-    training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel},
-    Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC;
-    tf::Real = 0.05,
-    κ::Real = 1.0,
-    σ::Real = 0.01)::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
-    f_train = zeros(ndofs(model.dh₁), size(training, 1))
-    f_test = zeros(ndofs(model.dh₁), size(test, 1))
+function assemble_f_static(model::ContModel,
+    dataset::Vector{DiscModel},
+    Af::SparseMatrixCSC)::Matrix{<:Real}
+    f = zeros(ndofs(model.dh), length(dataset))
 
-    for i in 1:size(training, 1)
-        update_model!(model, :p, training[i], tf, κ = κ, σ = σ)
-        f_train[:, i] = Af * q_proj * model.p_nodal
-    end
-    for i in 1:size(test, 1)
-        update_model!(model, :p, test[i], tf, κ = κ, σ = σ)
-        f_test[:, i] = Af * q_proj * model.p_nodal
+    for (i, dm) in enumerate(dataset)
+        distribute_load!(model, dm)
+        f[:, i] = Af * model.q_proj * model.p
     end
 
-    return f_train, f_test
+    return f
 end
 
 """
@@ -73,18 +81,8 @@ $(TYPEDSIGNATURES)
 Assemble all the ground truth data into one matrix for the training and one for the test
 sets.
 """
-function assemble_disc_theta(training::Vector{ContGridMod.DiscModel},
-    test::Vector{ContGridMod.DiscModel})::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
-    t_train = zeros(size(training[1].th, 1), size(training, 1))
-    t_test = zeros(size(test[1].th, 1), size(test, 1))
-
-    for i in 1:size(training, 1)
-        t_train[:, i] = training[i].th
-    end
-    for i in 1:size(test, 1)
-        t_test[:, i] = test[i].th
-    end
-    return t_train, t_test
+function assemble_disc_theta(dataset::Vector{DiscModel})::Matrix{<:Real}
+    return reduce(hcat, dataset .|> d -> d.th)
 end
 
 """
@@ -102,45 +100,41 @@ The returned matrices are
 - `q_coords` Coordinates of the quadrature points in the same order as stored in
     the DoF-handler
 """
-function assemble_matrices_static(model::ContGridMod.ContModel)::Tuple{
+function assemble_matrices_static(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
-    Array{<:Real, 2},
 }
-    q_coords = zeros(getnquadpoints(model.cellvalues) * size(model.grid.cells, 1), 2)
-    Af = zeros(ndofs(model.dh₁),
-        getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    Ak = zeros(ndofs(model.dh₁),
-        2 * getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
+    n_cell = length(model.grid.cells)
+    n_quad = getnquadpoints(model.cellvalues)
+    n_dofs = ndofs(model.dh)
 
-    n_basefuncs = getnbasefunctions(model.cellvalues)
-    ix_af = 1
-    ix_ak = 1
-    for cell in CellIterator(model.dh₁)
+    Af = spzeros(n_dofs, n_quad * n_cell)
+    Ak = spzeros(n_dofs, 2 * n_quad * n_cell)
+    ix = 1
+    for cell in CellIterator(model.dh)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
-        for q_point in 1:getnquadpoints(model.cellvalues)
-            x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
-            dΩ = getdetJdV(model.cellvalues, q_point)
-            q_coords[ix_af, :] = x
-            for i in 1:n_basefuncs
-                φᵢ = shape_value(model.cellvalues, q_point, i)
-                ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                Af[dofs[i], ix_af] = φᵢ * dΩ
-                Ak[dofs[i], ix_ak:(ix_ak + 1)] = ∇φᵢ * sqrt(dΩ)
+        for q in 1:getnquadpoints(model.cellvalues)
+            dΩ = getdetJdV(model.cellvalues, q)
+            for i in 1:getnbasefunctions(model.cellvalues)
+                φᵢ = shape_value(model.cellvalues, q, i)
+                ∇φᵢ = shape_gradient(model.cellvalues, q, i)
+                # Enforce slack bus, see below
+                if dofs[i] != model.id_slack
+                    Af[dofs[i], ix] = φᵢ * dΩ
+                    Ak[dofs[i], (2 * ix - 1):(2 * ix)] = ∇φᵢ * sqrt(dΩ)
+                end
             end
-            ix_af += 1
-            ix_ak += 2
+            ix += 1
         end
     end
-    # Enforce slack bus
-    Ak[model.ch.prescribed_dofs, :] .= 0.0
-    Af[model.ch.prescribed_dofs, :] .= 0.0
-    # Dim is the matrix containing only the one on the diagonal for the slack bus to make sure that the linear equations will have a unique solution
-    dim = zeros(ndofs(model.dh₁), ndofs(model.dh₁))
-    dim[model.ch.prescribed_dofs, model.ch.prescribed_dofs] .= 1
-    return sparse(Af), sparse(Ak), sparse(dim), q_coords
+    # Islack is the matrix containing only the one on the diagonal for the slack
+    # bus to make sure that the linear equations will have a unique solution
+    Islack = spzeros(n_dofs, n_dofs)
+    Islack[[model.id_slack], [model.id_slack]] .= 1
+
+    return Af, Ak, Islack
 end
 
 """
@@ -150,48 +144,62 @@ Projectors of nodal values onto the discrete values and the quadrature points.
 
 The returned matrices are
 - `θ_proj` project the nodal values onto the discrete nodes for comparison
-- `q_proj` project the nodal values onto the quadrature points
 - `q_proj_b` project the susceptances onto the quadrature points. The susceptances need to 
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
-function projectors_static(model::ContGridMod.ContModel,
-    dm::ContGridMod.DiscModel,
-    q_coords::Array{<:Real, 2})::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
-    func_interpolations = Ferrite.get_func_interpolations(model.dh₁, :u)
+function projectors_static(model::ContModel,
+    dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
+    return projectors_static_θ(model, dm), projectors_static_b(model)
+end
+
+function projectors_static_θ(model::ContModel, dm::DiscModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
-    n_base_funcs = getnbasefunctions(model.cellvalues)
-    θ_proj = zeros(size(dm.th, 1), ndofs(model.dh₁))
-    q_proj = zeros(size(q_coords, 1), ndofs(model.dh₁))
-    q_proj_b = zeros(2 * size(q_coords, 1), 2 * ndofs(model.dh₁))
+    n_dofs = ndofs(model.dh)
+    θ_proj = spzeros(dm.Nbus, n_dofs)
 
     for (i, point) in enumerate(eachrow(dm.coord))
-        ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)], warn = :false)
-        # If no cell is found (the point is outside the grid), use the closest grid point instead
+        point = Ferrite.Vec(point...)
+        ph = PointEvalHandler(model.grid, [point], warn = :false)
+        # If no cell is found (the point is outside the grid),
+        # use the closest grid point instead
         if ph.cells[1] === nothing
-            min_ix = argmin([norm(coord .- Ferrite.Vec(point...))
+            min_ix = argmin([norm(coord .- point)
                              for coord in grid_coords])
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        for j in 1:n_base_funcs
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, model.dh, ph.cells[1])
+        for j in 1:getnbasefunctions(model.cellvalues)
             θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
+    return θ_proj
+end
 
-    for (i, point) in enumerate(eachrow(q_coords))
-        ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
-        for j in 1:n_base_funcs
-            q_proj[i, cell_dofs[j]] = pv.N[j]
-            q_proj_b[2 * i - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
-            q_proj_b[2 * i, 2 * cell_dofs[j]] = pv.N[j]
+function projectors_static_b(model::ContModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
+    n_dofs = ndofs(model.dh)
+    n_cell_dofs = length(model.dh.cell_dofs)
+    q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
+    ix = 1
+    for cell in CellIterator(model.dh)
+        Ferrite.reinit!(model.cellvalues, cell)
+        cell_dofs = celldofs(cell)
+        for q in 1:getnquadpoints(model.cellvalues)
+            point = spatial_coordinate(model.cellvalues,
+                q, getcoordinates(cell))
+            ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
+            pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
+            for j in 1:getnbasefunctions(model.cellvalues)
+                q_proj_b[2 * ix - 1, 2 * cell_dofs[j] - 1] = pv.N[j]
+                q_proj_b[2 * ix, 2 * cell_dofs[j]] = pv.N[j]
+            end
+            ix += 1
         end
     end
-    return sparse(θ_proj), sparse(q_proj), sparse(q_proj_b)
+    return q_proj_b
 end
 
 """
@@ -199,48 +207,45 @@ $(TYPEDSIGNATURES)
 
 Do the actual learning of the parameters.
 """
-function susceptances(A::AbstractSparseMatrix,
-    dim::AbstractSparseMatrix,
+function _learn_susceptances(A::AbstractSparseMatrix,
+    Islack::AbstractSparseMatrix,
     q_proj::AbstractSparseMatrix,
-    proj::AbstractSparseMatrix,
-    f_train::Array{<:Real, 2},
-    t_train::Array{<:Real, 2},
-    b::Vector{<:Real},
-    n_epochs::Integer,
-    n_batches::Int;
+    disc_proj::AbstractSparseMatrix,
+    f_train::Matrix{T},
+    th_train::Matrix{T},
+    b::Vector{T},
+    n_epoch::Integer,
+    n_batch::Int;
+    opt = ADAM(0.1),
     bmin::Real = 0.1,
-    seed::Union{Integer, Nothing} = nothing,
-    δ::Real = 1.0)::Tuple{Vector{<:Real}, Array{<:Real, 2}}
-    opt = ADAM(0.1)
+    rng::AbstractRNG = Xoshiro(123),
+    δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
     param = Flux.params(b)
     n_train = size(f_train, 2)
-    @assert mod(n_train, n_batches)==0 "The number of batches must be a divisor of the number of training cases."
-    batch_size = Int(n_train / n_batches)
-    rng = Xoshiro(seed)
-    shuffled_ix = randperm(rng, n_train)
-    losses = zeros(n_epochs, n_batches)
+    @assert mod(n_train, n_batch)==0 "The number of batches must be a divisor of the number of training cases."
+    batch_size = Int(n_train / n_batch)
+
+    losses = zeros(n_epoch, n_batch)
     n_q = size(q_proj, 1)
-    for e in 1:n_epochs
-        for batch in 1:n_batches
+    for e in 1:n_epoch
+        shuffled_ix = randperm(rng, n_train)
+        for k in 1:n_batch
+            batch = shuffled_ix[((k - 1) * batch_size + 1):(k * batch_size)]
             local loss
             gs = Flux.gradient(param) do
                 btemp = max.(b, bmin)
-                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + dim
-                θ = proj * (K \ f_train[:,
-                    shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]])
-                loss = Flux.huber_loss(θ,
-                    t_train[:,
-                        shuffled_ix[((batch - 1) * batch_size + 1):(batch * batch_size)]],
-                    delta = δ)
+                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
+                θ = disc_proj * (K \ f_train[:, batch])
+                loss = Flux.huber_loss(θ, th_train[:, batch], delta = δ)
             end
-            losses[e, batch] = loss
-            if (mod(e, 50) == 0 && batch == 3)
+            losses[e, k] = loss
+            if (mod(e, 50) == 0 && k == 1)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
             Flux.update!(opt, param, gs)
         end
     end
-    return max.(b, 0.1), losses
+    return max.(b, bmin), losses
 end
 
 """
@@ -269,67 +274,104 @@ by using the liear approximation provided by the finite element method.
     distribution
 - `σ::Real = 0.01`: Standard deviation for the initial Gaussian distribution of the
     parameters
-- `seed::Union{Nothing, Integer} = 1709`: Seed for the ranom selection of batches and the
-    initial guess of ``b_x`` and ``b_y``
+- `rng::AbstractRNG = Xoshiro()`: Random number generator used to draw all random numbers
 - `bmin::Real = 0.1`: Minimimum value of the suscpetances
 - `δ = 0.5`: Parameter of the Huber loss function
 """
 function learn_susceptances(;
-    train_fn::String = MODULE_FOLDER * "/data/ml/training_",
-    test_fn::String = MODULE_FOLDER * "/data/ml/test_",
-    grid_fn::String = MODULE_FOLDER * "/data/panta.msh",
-    n_train::Int = 48,
-    n_test::Int = 12,
-    n_epochs::Int = 10000,
-    n_batches::Int = 3,
-    tf::Real = 0.05,
-    κ::Real = 0.02,
-    σ::Real = 0.01,
-    seed::Union{Nothing, Integer} = 1709,
+    train_folder::String = MODULE_FOLDER * "/data/ml/train",
+    test_folder::String = MODULE_FOLDER * "/data/ml/test",
+    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+    n_epoch::Int = 10000,
+    n_batch::Int = 3,
+    rng::AbstractRNG = Xoshiro(123),
+    opt = ADAM(0.1),
     bmin::Real = 0.1,
     δ = 0.5)::StaticSol
-    grid, scale_factor = get_grid(grid_fn)
-    train, test = discrete_models(train_fn, test_fn, n_train, n_test, scale_factor)
-    @assert check_slack(train, test) "The slack bus must be the same for all scenarios"
-    model = get_params(grid, tf, train[1], κ = κ, σ = σ)
-    Af, Ak, dim, q_coords = assemble_matrices_static(model)
-    θ_proj, q_proj, q_proj_b = projectors_static(model, train[1], q_coords)
-    f_train, f_test = assemble_f_static(model,
-        train,
-        test,
-        Af,
-        q_proj,
-        tf = tf,
-        σ = σ,
-        κ = κ)
-    t_train, t_test = assemble_disc_theta(train, test)
-    rng = Xoshiro(seed)
-    binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
-    b, losses = susceptances(Ak,
-        dim,
-        q_proj_b,
-        θ_proj,
-        f_train,
-        t_train,
-        binit,
-        n_epochs,
-        n_batches,
-        bmin = bmin,
-        seed = seed)
-    K = Ak * spdiagm(q_proj_b * b) * Ak' + dim
-    train_pred, test_pred = prediction(K, f_train, f_test, θ_proj)
-    train_losses, test_losses = get_losses(train_pred, test_pred, t_train, t_test, δ = δ)
-    update_model!(model, :bx, b[1:2:end])
-    update_model!(model, :by, b[2:2:end])
-    return StaticSol(b,
-        losses,
-        train_pred,
-        test_pred,
-        t_train,
-        t_test,
-        train_losses,
-        test_losses,
-        model)
+    mesh, scale_factor = get_mesh(mesh_fn)
+    train = load_discrete_models(train_folder, scale_factor)
+    test = load_discrete_models(test_folder, scale_factor)
+    @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
+
+    model = init_model(mesh)
+    set_slack!(model, train[1])
+    Af, Ak, Islack = assemble_matrices_static(model)
+    disc_proj, q_proj_b = projectors_static(model, train[1])
+
+    f_train = assemble_f_static(model, train, Af)
+    th_train = assemble_disc_theta(train)
+
+    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
+
+    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
+        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
+
+    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
+    model.θ₀ = K \ f_train[:, 1]
+
+    f_test = assemble_f_static(model, test, Af)
+    th_test = assemble_disc_theta(test)
+    train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
+    train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
+
+    model.bx = b[1:2:end]
+    model.by = b[2:2:end]
+    model.disc_proj = disc_proj
+
+    return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
+        train_losses, test_losses, model)
+end
+
+function learn_susceptances_dates(;
+    model_file::String = MODULE_FOLDER * "/data/pantagruel.json",
+    train_f_date::DateTime = DateTime(2021, 9, 17, 0),
+    train_t_date::DateTime = DateTime(2021, 9, 18, 23),
+    test_f_date::DateTime = DateTime(2021, 10, 17, 0),
+    test_t_date::DateTime = DateTime(2021, 10, 17, 11),
+    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+    n_epoch::Int = 10000,
+    n_batch::Int = 3,
+    rng::AbstractRNG = Xoshiro(123),
+    opt = ADAM(0.1),
+    bmin::Real = 0.1,
+    δ = 0.5)::StaticSol
+    mesh, scale_factor = get_mesh(mesh_fn)
+    pm = parse_file(model_file)
+    train = discrete_models_entsoe(pm,
+        train_f_date,
+        train_t_date,
+        scale_factor = scale_factor)
+    test = discrete_models_entsoe(pm, test_f_date, test_t_date, scale_factor = scale_factor)
+    @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
+
+    model = init_model(mesh)
+    set_slack!(model, train[1])
+    Af, Ak, Islack = assemble_matrices_static(model)
+    disc_proj, q_proj_b = projectors_static(model, train[1])
+
+    f_train = assemble_f_static(model, train, Af)
+    th_train = assemble_disc_theta(train)
+
+    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
+
+    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
+        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
+
+    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
+    model.θ₀ = K \ f_train[:, 1]
+
+    f_test = assemble_f_static(model, test, Af)
+    th_test = assemble_disc_theta(test)
+    train_pred, test_pred = prediction(K, f_train, f_test, disc_proj)
+    train_losses, test_losses = get_losses(train_pred, test_pred, th_train, th_test, δ = δ)
+
+    model.bx = b[1:2:end]
+    model.by = b[2:2:end]
+    distribute_load!(model, train[1])
+    model.disc_proj = disc_proj
+
+    return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
+        train_losses, test_losses, model)
 end
 
 """
@@ -338,9 +380,9 @@ $(TYPEDSIGNATURES)
 Obtain the prediction of the stable solution for the training and test data sets.
 """
 function prediction(K::AbstractSparseMatrix,
-    f_train::Array{<:Real, 2},
-    f_test::Array{<:Real, 2},
-    proj::AbstractSparseMatrix)::Tuple{Array{<:Real, 2}, Array{<:Real, 2}}
+    f_train::Matrix{T},
+    f_test::Matrix{T},
+    proj::AbstractSparseMatrix)::Tuple{Matrix{T}, Matrix{T}} where {T <: Real}
     return proj * (K \ f_train), proj * (K \ f_test)
 end
 
@@ -349,18 +391,14 @@ $(TYPEDSIGNATURES)
 
 Obtain the loss values for the training and test data sets.
 """
-function get_losses(train_pred::Array{<:Real, 2},
-    test_pred::Array{<:Real, 2},
-    t_train::Array{<:Real, 2},
-    t_test::Array{<:Real, 2};
+function get_losses(train_pred::Matrix{<:Real},
+    test_pred::Matrix{<:Real},
+    t_train::Matrix{<:Real},
+    t_test::Matrix{<:Real};
     δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
-    train_losses = vcat(Flux.huber_loss(train_pred,
-        t_train,
-        delta = δ,
+    train_losses = vcat(Flux.huber_loss(train_pred, t_train, delta = δ,
         agg = x -> mean(x, dims = 1))...)
-    test_losses = vcat(Flux.huber_loss(test_pred,
-        t_test,
-        delta = δ,
+    test_losses = vcat(Flux.huber_loss(test_pred, t_test, delta = δ,
         agg = x -> mean(x, dims = 1))...)
     return train_losses, test_losses
 end
