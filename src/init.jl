@@ -15,6 +15,7 @@ function init_model(grid::Grid)::ContModel
     push!(dh₂, :θ, 1)
     push!(dh₂, :ω, 1)
     close!(dh₂)
+    renumber!(dh₂, DofOrder.FieldWise())
     ip = Lagrange{2, RefTetrahedron, 1}() # 2D tetrahedron -> triangle
     qr = QuadratureRule{2, RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)

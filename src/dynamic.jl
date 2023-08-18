@@ -12,73 +12,50 @@ The matrices returned are
     matrices. For example the mass matrix can be calculated as 
     `M = M_const + A * m_quad * A'`
 - `Af` the matrix needed to create the force vector as `f = Af * (p_quad + fault_quad)`
-- `q_coords` Coordinates of all quadrature points in the same order as stored in the 
-    DoF-handler
 """
 function assemble_matrices_dynamic(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
     SparseMatrixCSC,
-    Matrix{<:Real},
 }
-    K_const = create_sparsity_pattern(model.dh₂)
-    M_const = create_sparsity_pattern(model.dh₂)
-    A = zeros(ndofs(model.dh₂),
+    ndof = ndofs(model.dh₁)
+    K_const = spzeros(2 * ndof, 2 * ndof)
+    M_const = spzeros(2 * ndof, 2 * ndof)
+    A = spzeros(ndofs(model.dh₂),
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    Af = zeros(ndofs(model.dh₂),
+    Af = spzeros(ndofs(model.dh₂),
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    dofr = dof_range(model.dh₂, :ω)
-    q_coords = zeros(getnquadpoints(model.cellvalues) * size(model.grid.cells, 1), 2)
     n_basefuncs_θ = getnbasefunctions(model.cellvalues)
     n_basefuncs_ω = getnbasefunctions(model.cellvalues)
-    n_basefuncs = n_basefuncs_θ + n_basefuncs_ω
-    θ▄, ω▄ = 1, 2
+    bx = model.q_proj * model.bx
+    by = model.q_proj * model.by
 
-    Kₑ = PseudoBlockArray(zeros(n_basefuncs, n_basefuncs),
-        [n_basefuncs_θ, n_basefuncs_ω],
-        [n_basefuncs_θ, n_basefuncs_ω])
-    Mₑ = PseudoBlockArray(zeros(n_basefuncs, n_basefuncs),
-        [n_basefuncs_θ, n_basefuncs_ω],
-        [n_basefuncs_θ, n_basefuncs_ω])
-
-    assembler_K = start_assemble(K_const)
-    assembler_M = start_assemble(M_const)
-
-    for (ix, cell) in enumerate(CellIterator(model.dh₂))
-        fill!(Kₑ, 0)
-        fill!(Mₑ, 0)
-
+    q_ix = 1
+    for cell in CellIterator(model.dh₁)
         Ferrite.reinit!(model.cellvalues, cell)
 
         dofs = celldofs(cell)
         for q_point in 1:getnquadpoints(model.cellvalues)
-            x = spatial_coordinate(model.cellvalues, q_point, getcoordinates(cell))
-            b = SparseMatrixCSC(diagm([model.bx(x), model.by(x)]))
+            b = spdiagm([bx[q_ix], by[q_ix]])
             dΩ = getdetJdV(model.cellvalues, q_point)
-            idx = (ix - 1) * getnquadpoints(model.cellvalues) + q_point
-            q_coords[idx, :] = x
             for i in 1:n_basefuncs_θ
                 φᵢ = shape_value(model.cellvalues, q_point, i)
                 ∇φᵢ = shape_gradient(model.cellvalues, q_point, i)
-                A[dofs[dofr[i]], idx] = φᵢ * sqrt(dΩ)
-                Af[dofs[dofr[i]], idx] = φᵢ * dΩ
+                A[dofs[i] + ndof, q_ix] = φᵢ * sqrt(dΩ)
+                Af[dofs[i] + ndof, q_ix] = φᵢ * dΩ
                 for j in 1:n_basefuncs_ω
                     φⱼ = shape_value(model.cellvalues, q_point, j)
                     ∇φⱼ = shape_gradient(model.cellvalues, q_point, j)
-                    Kₑ[BlockIndex((θ▄, ω▄), (i, j))] += φᵢ ⋅ φⱼ * dΩ
-                    Kₑ[BlockIndex((ω▄, θ▄), (i, j))] -= ∇φᵢ ⋅ (b * ∇φⱼ) * dΩ
-                    Mₑ[BlockIndex((θ▄, θ▄), (i, j))] += φᵢ ⋅ φⱼ * dΩ
+                    K_const[dofs[i], dofs[j] + ndof] += φᵢ ⋅ φⱼ * dΩ
+                    K_const[dofs[i] + ndof, dofs[j]] -= ∇φᵢ ⋅ (b * ∇φⱼ) * dΩ
+                    M_const[dofs[i], dofs[j]] += φᵢ ⋅ φⱼ * dΩ
                 end
             end
+            q_ix += 1
         end
-
-        assemble!(assembler_K, celldofs(cell), Kₑ)
-        assemble!(assembler_M, celldofs(cell), Mₑ)
     end
-    dropzeros!(K_const)
-    dropzeros!(M_const)
-    return M_const, K_const, sparse(A), sparse(Af), q_coords
+    return M_const, K_const, A, Af
 end
 
 """
