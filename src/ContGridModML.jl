@@ -158,5 +158,6 @@ include("plot.jl")
 include("static.jl")
 include("tools.jl")
 include("dynamic.jl")
+include("disc_dynamics.jl")
 
 end # module ContGridModML
