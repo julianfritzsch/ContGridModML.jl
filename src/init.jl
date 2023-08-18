@@ -8,18 +8,14 @@ Create a continuous model from a discrete model by using a diffusion process to 
 function init_model(grid::Grid)::ContModel
 
     # Create the dof handler and interpolation functions
-    dh₁ = DofHandler(grid)
-    push!(dh₁, :u, 1)
-    close!(dh₁)
-    dh₂ = DofHandler(grid)
-    push!(dh₂, :θ, 1)
-    push!(dh₂, :ω, 1)
-    close!(dh₂)
+    dh = DofHandler(grid)
+    push!(dh, :u, 1)
+    close!(dh)
     ip = Lagrange{2, RefTetrahedron, 1}() # 2D tetrahedron -> triangle
     qr = QuadratureRule{2, RefTetrahedron}(2)
     cellvalues = CellScalarValues(qr, ip)
 
-    n_dofs = ndofs(dh₁)
+    n_dofs = ndofs(dh)
 
     # Get the area of the grid
 
@@ -28,9 +24,9 @@ function init_model(grid::Grid)::ContModel
     bx, by = ones(n_dofs), ones(n_dofs)
     id_slack = 0
     disc_proj = spzeros(0, 0)
-    q_proj = get_q_proj(dh₁, cellvalues)
-    area = integrate(dh₁, cellvalues, q_proj, ones(n_dofs))
-    return ContModel(grid, dh₁, dh₂, cellvalues, area, m, d, p, bx, by,
+    q_proj = get_q_proj(dh, cellvalues)
+    area = integrate(dh, cellvalues, q_proj, ones(n_dofs))
+    return ContModel(grid, dh, cellvalues, area, m, d, p, bx, by,
         θ₀, dp, id_slack, disc_proj, q_proj)
 end
 
@@ -57,10 +53,10 @@ end
 
 function set_slack!(cm::ContModel,
     dm::DiscModel)
-    node_coords = [cm.dh₁.grid.nodes[i].x for i in 1:size(cm.dh₁.grid.nodes, 1)]
+    node_coords = [cm.dh.grid.nodes[i].x for i in 1:size(cm.dh.grid.nodes, 1)]
     disc_slack = [Ferrite.Vec(dm.coord[dm.id_slack, :]...)]
     id_slack = argmin(norm.(node_coords .- disc_slack))
-    ch = ConstraintHandler(cm.dh₁)
+    ch = ConstraintHandler(cm.dh)
     gen₀ = Dirichlet(:u, Set([id_slack]), (x, t) -> 0)
     add!(ch, gen₀)
     close!(ch)
@@ -70,10 +66,10 @@ function set_slack!(cm::ContModel,
 end
 
 function distribute_load!(cm::ContModel,
-    dm::DiscModel)
-    pl, pg = zeros(ndofs(cm.dh₁)), zeros(ndofs(cm.dh₁))
+    dm::DiscModel)::Nothing
+    pl, pg = zeros(ndofs(cm.dh)), zeros(ndofs(cm.dh))
     grid_coords = [node.x for node in cm.grid.nodes]
-    ip = cm.dh₁.field_interpolations[1]
+    ip = cm.dh.field_interpolations[1]
     # assuming that p(x) is a sum of delta functions
     for (i, point) in enumerate(eachrow(dm.coord))
         point = Ferrite.Vec(point...)
@@ -86,8 +82,8 @@ function distribute_load!(cm::ContModel,
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
             pl[cell_dofs[j]] -= dm.p_load[i] * pv.N[j]
         end
@@ -103,8 +99,8 @@ function distribute_load!(cm::ContModel,
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
         for j in 1:getnbasefunctions(cm.cellvalues)
             pg[cell_dofs[j]] += dm.p_gen[i] * pv.N[j]
         end
@@ -115,6 +111,40 @@ function distribute_load!(cm::ContModel,
     pl .*= -sum(dm.p_load) / integrate(cm, pl)
 
     cm.p[:] .= pg + pl
+
+    return nothing
+end
+
+function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real)::Nothing
+    fault = zeros(ndofs(cm.dh))
+    if abs(dP) < 1e-10
+        cm.fault[:] .= fault
+        return nothing
+    end
+    grid_coords = [node.x for node in cm.grid.nodes]
+    ip = cm.dh.field_interpolations[1]
+    # assuming that fault(x) is a delta function
+    point = Ferrite.Vec(coord...)
+    ph = PointEvalHandler(cm.grid, [point], warn = :false)
+    # If no cell is found (the point is outside the grid),
+    # use the closest grid point instead
+    if ph.cells[1] === nothing
+        min_ix = argmin([norm(coord .- point)
+                         for coord in grid_coords])
+        ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+    end
+    pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+    cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+    Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
+    for j in 1:getnbasefunctions(cm.cellvalues)
+        fault[cell_dofs[j]] += dP * pv.N[j]
+    end
+
+    # Normalize values
+    fault .*= dP / integrate(cm, fault)
+
+    cm.fault[:] .= fault
+    return nothing
 end
 
 """
@@ -141,7 +171,7 @@ function integrate(dh::DofHandler,
 end
 
 function integrate(cm::ContModel, vals::Vector{<:Real})::Real
-    return integrate(cm.dh₁, cm.cellvalues, cm.q_proj, vals)
+    return integrate(cm.dh, cm.cellvalues, cm.q_proj, vals)
 end
 
 """

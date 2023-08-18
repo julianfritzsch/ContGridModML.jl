@@ -29,8 +29,7 @@ end
 
 mutable struct ContModel{T <: Real} <: GridModel
     grid::Grid
-    dh₁::DofHandler
-    dh₂::DofHandler
+    dh::DofHandler
     cellvalues::CellScalarValues
     area::Real
     m::Vector{T}
@@ -158,5 +157,6 @@ include("plot.jl")
 include("static.jl")
 include("tools.jl")
 include("dynamic.jl")
+include("disc_dynamics.jl")
 
 end # module ContGridModML

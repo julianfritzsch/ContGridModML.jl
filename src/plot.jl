@@ -20,9 +20,9 @@ function nodal_plot(model::ContModel,
     ax = Axis(f[1, 1]; ax_args...)
 
     if logarithmic
-        sp = solutionplot!(model.dh₁, log10.(val), colormap = colormap)
+        sp = solutionplot!(model.dh, log10.(val), colormap = colormap)
     else
-        sp = solutionplot!(model.dh₁, val, colormap = colormap)
+        sp = solutionplot!(model.dh, val, colormap = colormap)
     end
 
     if !decorations

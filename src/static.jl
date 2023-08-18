@@ -65,7 +65,7 @@ Assemble the force vectors for the static solutions.
 function assemble_f_static(model::ContModel,
     dataset::Vector{DiscModel},
     Af::SparseMatrixCSC)::Matrix{<:Real}
-    f = zeros(ndofs(model.dh₁), length(dataset))
+    f = zeros(ndofs(model.dh), length(dataset))
 
     for (i, dm) in enumerate(dataset)
         distribute_load!(model, dm)
@@ -107,12 +107,12 @@ function assemble_matrices_static(model::ContModel)::Tuple{
 }
     n_cell = length(model.grid.cells)
     n_quad = getnquadpoints(model.cellvalues)
-    n_dofs = ndofs(model.dh₁)
+    n_dofs = ndofs(model.dh)
 
     Af = spzeros(n_dofs, n_quad * n_cell)
     Ak = spzeros(n_dofs, 2 * n_quad * n_cell)
     ix = 1
-    for cell in CellIterator(model.dh₁)
+    for cell in CellIterator(model.dh)
         Ferrite.reinit!(model.cellvalues, cell)
         dofs = celldofs(cell)
         for q in 1:getnquadpoints(model.cellvalues)
@@ -149,12 +149,14 @@ The returned matrices are
 """
 function projectors_static(model::ContModel,
     dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    interp_fun = Ferrite.get_func_interpolations(model.dh₁, :u)[1]
+    return projectors_static_θ(model, dm), projectors_static_b(model)
+end
+
+function projectors_static_θ(model::ContModel, dm::DiscModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
     grid_coords = [node.x for node in model.grid.nodes]
-    n_dofs = ndofs(model.dh₁)
-    n_cell_dofs = length(model.dh₁.cell_dofs)
+    n_dofs = ndofs(model.dh)
     θ_proj = spzeros(dm.Nbus, n_dofs)
-    q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
 
     for (i, point) in enumerate(eachrow(dm.coord))
         point = Ferrite.Vec(point...)
@@ -167,15 +169,22 @@ function projectors_static(model::ContModel,
             ph = PointEvalHandler(model.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
-        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh₁, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, model.dh₁, ph.cells[1])
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(model.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, model.dh, ph.cells[1])
         for j in 1:getnbasefunctions(model.cellvalues)
             θ_proj[i, cell_dofs[j]] = pv.N[j]
         end
     end
+    return θ_proj
+end
 
+function projectors_static_b(model::ContModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
+    n_dofs = ndofs(model.dh)
+    n_cell_dofs = length(model.dh.cell_dofs)
+    q_proj_b = spzeros(2 * n_cell_dofs, 2 * n_dofs)
     ix = 1
-    for cell in CellIterator(model.dh₁)
+    for cell in CellIterator(model.dh)
         Ferrite.reinit!(model.cellvalues, cell)
         cell_dofs = celldofs(cell)
         for q in 1:getnquadpoints(model.cellvalues)
@@ -190,7 +199,7 @@ function projectors_static(model::ContModel,
             ix += 1
         end
     end
-    return θ_proj, q_proj_b
+    return q_proj_b
 end
 
 """
@@ -292,7 +301,7 @@ function learn_susceptances(;
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
-    binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
+    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
 
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
         th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
@@ -343,7 +352,7 @@ function learn_susceptances_dates(;
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
-    binit = 20 * rand(rng, 2 * ndofs(model.dh₁)) .+ 90
+    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
 
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
         th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
@@ -358,6 +367,7 @@ function learn_susceptances_dates(;
 
     model.bx = b[1:2:end]
     model.by = b[2:2:end]
+    distribute_load!(model, train[1])
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,

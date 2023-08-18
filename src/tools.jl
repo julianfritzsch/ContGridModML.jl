@@ -217,21 +217,16 @@ function cont_from_dict(data::Dict{String, <:Any})::ContModel
              for x in eachrow(data["grid"]["cells"])]
     nodes = [Node(Ferrite.Vec(x...)) for x in eachrow(data["grid"]["nodes"])]
     grid = Grid(cells, nodes)
-    dh₁ = DofHandler(grid)
-    dh₂ = DofHandler(grid)
-    add!(dh₁, :u, eval(Meta.parse(data["dh"]["ui"])))
-    add!(dh₂, :θ, eval(Meta.parse(data["dh"]["ti"])))
-    add!(dh₂, :ω, eval(Meta.parse(data["dh"]["oi"])))
-    close!(dh₁)
-    close!(dh₂)
+    dh = DofHandler(grid)
+    add!(dh, :u, eval(Meta.parse(data["dh"]["ui"])))
+    close!(dh)
     points = [Ferrite.Vec(x...) for x in eachrow(data["cellvalues"]["points"])]
     qr = eval(Meta.parse(data["cellvalues"]["type"]))(data["cellvalues"]["weights"], points)
     cv = CellScalarValues(qr, eval(Meta.parse(data["cellvalues"]["ip"])))
     q_proj = dict_to_sparse(data["matrices"]["q_proj"])
     disc_proj = dict_to_sparse(data["matrices"]["disc_proj"])
     return ContModel(grid,
-        dh₁,
-        dh₂,
+        dh,
         cv,
         data["values"]["area"],
         data["values"]["m"],
@@ -256,13 +251,9 @@ function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
     re["grid"]["nodes"] = nodes
     re["grid"]["celltype"] = type
 
-    ui = string(cm.dh₁.field_interpolations[1])
-    ti = string(cm.dh₂.field_interpolations[1])
-    oi = string(cm.dh₂.field_interpolations[2])
+    ui = string(cm.dh.field_interpolations[1])
     re["dh"] = Dict{String, Any}()
     re["dh"]["ui"] = ui
-    re["dh"]["ti"] = ti
-    re["dh"]["oi"] = oi
 
     type = string(typeof(cm.cellvalues.qr))
     ip = string(cm.cellvalues.func_interp)
@@ -462,4 +453,19 @@ function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real}
     end
     update_data!(grid, result["solution"])
     return remove_nan(grid)
+end
+
+function stable_sol!(cm::ContModel)
+    if cm.id_slack == 0
+        println("Slack bus not set, setting it to 1")
+        cm.id_slack = 1
+    end
+    Af, Ak, Islack = assemble_matrices_static(cm)
+    q_proj = projectors_static_b(cm)
+    b = zeros(2 * ndofs(cm.dh))
+    b[1:2:end] = cm.bx
+    b[2:2:end] = cm.by
+    K = Ak * spdiagm(q_proj * b) * Ak' + Islack
+    cm.θ₀[:] = K \ (Af * cm.q_proj * cm.p)
+    return nothing
 end
