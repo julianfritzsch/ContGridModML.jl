@@ -19,7 +19,7 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
     SparseMatrixCSC,
     SparseMatrixCSC,
 }
-    ndof = ndofs(model.dh₁)
+    ndof = ndofs(model.dh)
     K_const = spzeros(2 * ndof, 2 * ndof)
     M_const = spzeros(2 * ndof, 2 * ndof)
     A = spzeros(ndofs(model.dh₂),
@@ -32,7 +32,7 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
     by = model.q_proj * model.by
 
     q_ix = 1
-    for cell in CellIterator(model.dh₁)
+    for cell in CellIterator(model.dh)
         Ferrite.reinit!(model.cellvalues, cell)
 
         dofs = celldofs(cell)
@@ -71,11 +71,11 @@ Returned projectors
 function projectors_dynamic(cm::ContModel,
     dm::DiscModel,
     ω_idxs::Vector{<:Integer})::SparseMatrixCSC
-    func_interpolations = Ferrite.get_func_interpolations(cm.dh₁, :u)
+    func_interpolations = Ferrite.get_func_interpolations(cm.dh, :u)
     grid_coords = [node.x for node in cm.grid.nodes]
     n_base_funcs = getnbasefunctions(cm.cellvalues)
 
-    ndof = ndofs(cm.dh₁)
+    ndof = ndofs(cm.dh)
     ω_proj = spzeros(size(ω_idxs, 1), 2 * ndof)
     for (i, point) in enumerate(eachrow(dm.coord[ω_idxs, :]))
         ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)], warn = :false)
@@ -141,7 +141,7 @@ function generate_comp_idxs(cm::ContModel,
     dx = max((x_max - x_min) / n, (y_max - y_min) / n)
     for i in x_min:dx:x_max
         for j in y_min:dx:y_max
-            ph = PointEvalHandler(cm.dh₁.grid,
+            ph = PointEvalHandler(cm.dh.grid,
                 [Ferrite.Vec(i, j)],
                 warn = false)
             if ph.cells[1] !== nothing
@@ -229,7 +229,7 @@ Create the initial conditions for the continuous simulations.
 """
 function initial_conditions(cm::ContModel)::Vector{<:Real}
     stable_sol!(cm)
-    return [cm.θ₀; zeros(ndofs(cm.dh₁))]
+    return [cm.θ₀; zeros(ndofs(cm.dh))]
 end
 
 """
@@ -272,9 +272,9 @@ Calculate the eigenvectors of the unweighted Laplacian of the grid used for the 
     simulations.
 """
 function lap_eigenvectors(cm::ContModel)::Matrix{<:Real}
-    N = ndofs(cm.dh₁)
+    N = ndofs(cm.dh)
     lap = zeros(N, N)
-    for cell in CellIterator(cm.dh₁)
+    for cell in CellIterator(cm.dh)
         i, j, k = celldofs(cell)
         lap[i, j] = lap[j, i] = -1
         lap[i, k] = lap[k, i] = -1

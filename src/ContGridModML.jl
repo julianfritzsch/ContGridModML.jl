@@ -29,8 +29,7 @@ end
 
 mutable struct ContModel{T <: Real} <: GridModel
     grid::Grid
-    dh₁::DofHandler
-    dh₂::DofHandler
+    dh::DofHandler
     cellvalues::CellScalarValues
     area::Real
     m::Vector{T}
