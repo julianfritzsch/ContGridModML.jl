@@ -22,9 +22,9 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
     ndof = ndofs(model.dh)
     K_const = spzeros(2 * ndof, 2 * ndof)
     M_const = spzeros(2 * ndof, 2 * ndof)
-    A = spzeros(ndofs(model.dh₂),
+    A = spzeros(2 * ndof,
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
-    Af = spzeros(ndofs(model.dh₂),
+    Af = spzeros(2 * ndof,
         getnquadpoints(model.cellvalues) * size(model.grid.cells, 1))
     n_basefuncs_θ = getnbasefunctions(model.cellvalues)
     n_basefuncs_ω = getnbasefunctions(model.cellvalues)
@@ -85,8 +85,8 @@ function projectors_dynamic(cm::ContModel,
             ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
         end
         pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
+        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
         for j in 1:n_base_funcs
             ω_proj[i, cell_dofs[j] + ndof] = pv.N[j]
         end
@@ -109,7 +109,7 @@ function assemble_f_dynamic(cm::ContModel,
         dP = dP .* ones(size(fault_ix, 1))
     end
     f_old = cm.fault
-    f = zeros(ndofs(cm.dh₂), size(fault_ix, 1))
+    f = zeros(2 * ndofs(cm.dh), size(fault_ix, 1))
     for (i, (ix, p)) in enumerate(zip(fault_ix, dP))
         set_local_disturbance!(cm, dm.coord[ix, :], p)
         f[:, i] = Af * cm.q_proj * (cm.p .+ cm.fault)
@@ -193,7 +193,7 @@ function disc_dyn(dm::DiscModel,
         0.0,
         tf,
         fault_size,
-        faultid = fault_node,
+        fault_node,
         dt = dt,
         solve_kwargs = solve_kwargs)
 end
@@ -297,15 +297,17 @@ eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by project
 results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
 set to zero.
 """
-function init_expansion(cm::ContModel,
+function init_expansion(
     eve::Matrix{<:Real},
     n_modes::Integer,
-    n_coeffs::Integer)::Tuple{Vector{<:Real}, Matrix{<:Real}}
+    n_coeffs::Integer,
+    m::Vector{<:Real},
+    d::Vector{<:Real})::Tuple{Vector{<:Real}, Matrix{<:Real}}
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
-        coeffs[i] = cm.m' * eve[:, i]
-        coeffs[i + n_modes] = cm.d' * eve[:, i]
+        coeffs[i] = m' * eve[:, i]
+        coeffs[i + n_modes] = d' * eve[:, i]
     end
     return coeffs, eve[:, 1:n_modes]
 end
@@ -490,14 +492,14 @@ function learn_dynamical_parameters(;
         :abstol => 1e-3,
         :reltol => 1e-2),
     seed::Union{Nothing, Integer} = 1709,
-    σ = 0.05,
     n_points = 40,
     n_coeffs = 1,
     n_modes = 20,
     n_epochs = 8000,
     max_function::Function = (x) -> 30 * 2^(x / 500),
     train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
+    test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
+    rng::AbstractRNG = Xoshiro(123))::DynamicSol
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
     if train_ix !== nothing && test_ix !== nothing
@@ -521,7 +523,9 @@ function learn_dynamical_parameters(;
     f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af)
     f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af)
     eve = lap_eigenvectors(cm)
-    p, eve_p = init_expansion(cm, eve, n_modes, n_coeffs)
+    m_init =  300 * rand(rng, ndofs(cm.dh)) .+ 50
+    d_init =  150 * rand(rng, ndofs(cm.dh)) .+ 25
+    p, eve_p = init_expansion(eve, n_modes, n_coeffs, m_init, d_init)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
     g_proj = grad_proj(A, cm.q_proj, eve_p, n_modes)
