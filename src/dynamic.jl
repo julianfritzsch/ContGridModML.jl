@@ -297,8 +297,7 @@ eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by project
 results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
 set to zero.
 """
-function init_expansion(
-    eve::Matrix{<:Real},
+function init_expansion(eve::Matrix{<:Real},
     n_modes::Integer,
     n_coeffs::Integer,
     m::Vector{<:Real},
@@ -523,8 +522,8 @@ function learn_dynamical_parameters(;
     f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af)
     f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af)
     eve = lap_eigenvectors(cm)
-    m_init =  300 * rand(rng, ndofs(cm.dh)) .+ 50
-    d_init =  150 * rand(rng, ndofs(cm.dh)) .+ 25
+    m_init = 300 * rand(rng, ndofs(cm.dh)) .+ 50
+    d_init = 150 * rand(rng, ndofs(cm.dh)) .+ 25
     p, eve_p = init_expansion(eve, n_modes, n_coeffs, m_init, d_init)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
