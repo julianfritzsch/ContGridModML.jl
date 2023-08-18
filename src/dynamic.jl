@@ -70,15 +70,13 @@ Returned projectors
 """
 function projectors_dynamic(cm::ContModel,
     dm::DiscModel,
-    q_coords::Matrix{<:Real},
-    ω_idxs::Vector{<:Integer})::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    func_interpolations = Ferrite.get_func_interpolations(cm.dh₂, :ω)
+    ω_idxs::Vector{<:Integer})::SparseMatrixCSC
+    func_interpolations = Ferrite.get_func_interpolations(cm.dh₁, :u)
     grid_coords = [node.x for node in cm.grid.nodes]
-    dofr = dof_range(cm.dh₂, :ω)
     n_base_funcs = getnbasefunctions(cm.cellvalues)
 
-    q_proj = zeros(size(q_coords, 1), ndofs(cm.dh₂) ÷ 2)
-    ω_proj = zeros(size(ω_idxs, 1), ndofs(cm.dh₂))
+    ndof = ndofs(cm.dh₁)
+    ω_proj = spzeros(size(ω_idxs, 1), 2 * ndof)
     for (i, point) in enumerate(eachrow(dm.coord[ω_idxs, :]))
         ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)], warn = :false)
         if ph.cells[1] === nothing
@@ -90,26 +88,10 @@ function projectors_dynamic(cm::ContModel,
         cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
         Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
         for j in 1:n_base_funcs
-            ω_proj[i, cell_dofs[dofr[j]]] = pv.N[j]
+            ω_proj[i, cell_dofs[j] + ndof] = pv.N[j]
         end
     end
-    omega_dofs = Set{Integer}()
-    for i in 1:size(cm.grid.cells, 1)
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, i))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, i)
-        push!(omega_dofs, cell_dofs[dofr]...)
-    end
-    odofs_dict = Dict(j => i for (i, j) in enumerate(sort(collect(omega_dofs))))
-    for (i, point) in enumerate(eachrow(q_coords))
-        ph = PointEvalHandler(cm.grid, [Ferrite.Vec(point...)])
-        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], func_interpolations[1])
-        cell_dofs = Vector{Int64}(undef, ndofs_per_cell(cm.dh₂, ph.cells[1]))
-        Ferrite.celldofs!(cell_dofs, cm.dh₂, ph.cells[1])
-        for j in 1:n_base_funcs
-            q_proj[i, odofs_dict[cell_dofs[dofr[j]]]] = pv.N[j]
-        end
-    end
-    return sparse(q_proj), sparse(ω_proj)
+    return ω_proj
 end
 
 """
@@ -121,20 +103,18 @@ function assemble_f_dynamic(cm::ContModel,
     dm::DiscModel,
     fault_ix::Vector{<:Integer},
     dP::Union{Real, Vector{<:Real}},
-    Af::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC,
-    σ::Real)::Matrix{<:Real}
+    Af::SparseMatrixCSC)::Matrix{<:Real}
     @assert size(fault_ix) == size(dP)||isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
         dP = dP .* ones(size(fault_ix, 1))
     end
-    f_old = cm.fault_nodal
+    f_old = cm.fault
     f = zeros(ndofs(cm.dh₂), size(fault_ix, 1))
     for (i, (ix, p)) in enumerate(zip(fault_ix, dP))
-        add_local_disturbance!(cm, dm.coord[ix, :], p, σ)
-        f[:, i] = Af * q_proj * (cm.p_nodal .+ cm.fault_nodal)
+        set_local_disturbance!(cm, dm.coord[ix, :], p)
+        f[:, i] = Af * cm.q_proj * (cm.p .+ cm.fault)
     end
-    cm.fault_nodal = f_old
+    cm.fault = f_old
     return f
 end
 

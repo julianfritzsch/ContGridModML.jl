@@ -71,7 +71,7 @@ function set_slack!(cm::ContModel,
 end
 
 function distribute_load!(cm::ContModel,
-    dm::DiscModel)
+    dm::DiscModel)::Nothing
     pl, pg = zeros(ndofs(cm.dh₁)), zeros(ndofs(cm.dh₁))
     grid_coords = [node.x for node in cm.grid.nodes]
     ip = cm.dh₁.field_interpolations[1]
@@ -116,6 +116,36 @@ function distribute_load!(cm::ContModel,
     pl .*= -sum(dm.p_load) / integrate(cm, pl)
 
     cm.p[:] .= pg + pl
+
+    return nothing
+end
+
+function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real)::Nothing
+    fault = zeros(ndofs(cm.dh₁))
+    grid_coords = [node.x for node in cm.grid.nodes]
+    ip = cm.dh₁.field_interpolations[1]
+    # assuming that fault(x) is a delta function
+    point = Ferrite.Vec(coord...)
+    ph = PointEvalHandler(cm.grid, [point], warn = :false)
+    # If no cell is found (the point is outside the grid),
+    # use the closest grid point instead
+    if ph.cells[1] === nothing
+        min_ix = argmin([norm(coord .- point)
+                         for coord in grid_coords])
+        ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+    end
+    pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+    cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh₁, ph.cells[1]))
+    Ferrite.celldofs!(cell_dofs, cm.dh₁, ph.cells[1])
+    for j in 1:getnbasefunctions(cm.cellvalues)
+        fault[cell_dofs[j]] -= dP * pv.N[j]
+    end
+
+    # Normalize values
+    fault .*= dP / integrate(cm, fault)
+
+    cm.fault[:] .= fault
+    return nothing
 end
 
 """
