@@ -2,16 +2,16 @@
 $(TYPEDSIGNATURES)
 """
 function disc_dynamics(dm::DiscModel,
-                       tstart::Real,
-                       tend::Real,
-                       delta_p::Union{Real, Vector{<:Real}},
-                       faultid::Int;
-                       dt::Real = 1e-2,  # Distance of time steps at which the solution is returned
-                       tol::Real = 1e-10,  # Target tolerance for the Newtoon-Raphson solver
-                       maxiter::Int = 30,  # Maximum iteration for the Newton-Raphson solver
-                       dmin::Real = 1e-4,  # Minimum amount of damping for load buses
-                       alg::OrdinaryDiffEqAlgorithm = TRBDF2(),  # The solver that is passed to the solve function
-                       solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
+    tstart::Real,
+    tend::Real,
+    delta_p::Union{Real, Vector{<:Real}},
+    faultid::Int;
+    dt::Real = 1e-2,  # Distance of time steps at which the solution is returned
+    tol::Real = 1e-10,  # Target tolerance for the Newtoon-Raphson solver
+    maxiter::Int = 30,  # Maximum iteration for the Newton-Raphson solver
+    dmin::Real = 1e-4,  # Minimum amount of damping for load buses
+    alg::OrdinaryDiffEqAlgorithm = TRBDF2(),  # The solver that is passed to the solve function
+    solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
 
     # Data preperation
     Nbus = dm.Nbus
@@ -25,8 +25,8 @@ function disc_dynamics(dm::DiscModel,
     p .-= sum(p) / Nbus
     nline = dm.Nline
     inc = sparse([dm.id_line[:, 1]; dm.id_line[:, 2]],
-                 [1:nline; 1:nline],
-                 [-ones(nline); ones(nline)])
+        [1:nline; 1:nline],
+        [-ones(nline); ones(nline)])
 
     # create arrays of dynamical parameters
     mg = dm.m_gen[is_producing]
@@ -39,14 +39,14 @@ function disc_dynamics(dm::DiscModel,
     V = ones(Nbus)
     theta = zeros(Nbus)
     V, theta, _ = NRsolver(Ybus,
-                           V,
-                           theta,
-                           p,
-                           q,
-                           Array{Int64, 1}([]),
-                           dm.id_slack,
-                           tol = tol,
-                           maxiter = maxiter)
+        V,
+        theta,
+        p,
+        q,
+        Array{Int64, 1}([]),
+        dm.id_slack,
+        tol = tol,
+        maxiter = maxiter)
 
     # preparations for dynamical simulation, mass matrix and fault vectors
     if (faultid != 0)
@@ -80,7 +80,7 @@ function disc_dynamics(dm::DiscModel,
         J[:, :] = spzeros(Nbus + ng, Nbus + ng)
         J[id1, 1:Nbus] = J0[id2, 1:Nbus]
         J[(Nbus + 1):end, (Nbus + 1):end] = -spdiagm(dg)
-        J[id_gen, (Nbus + 1):end] .= 1.0
+        J[id_gen, (Nbus + 1):end] = spdiagm(ones(ng))
         J[:, :] = mass .* J
     end
 
@@ -95,7 +95,7 @@ function disc_dynamics(dm::DiscModel,
     # solve the swing equations
     func = ODEFunction(swing!, jac = jacobian!, jac_prototype = jac_proto)
     prob = ODEProblem(func, u0, tspan)
-    sol = solve(prob, alg, tstops = tt; solve_kwargs...)
+    sol = solve(prob, alg, saveat = tt, tstops = tt; solve_kwargs...)
     return sol
 end
 
@@ -109,14 +109,14 @@ For information on solving the power flow equations with Newton-Raphson, see,
 for instance, V. Vittal and A. Bergen, Power systems analysis, Prentice Hall, 1999. 
 """
 function NRsolver(Ybus::SparseMatrixCSC{<:Complex, <:Int},
-                  V::Array{<:Real, 1},
-                  theta::Array{<:Real, 1},
-                  p::Array{<:Real, 1},
-                  q::Array{<:Real, 1},
-                  idpq::Array{<:Int, 1},
-                  id_slack::Int;
-                  tol::Real = 1E-6,
-                  maxiter::Int = 14)::Tuple{Array{<:Real, 1}, Array{<:Real, 1}, Int}
+    V::Array{<:Real, 1},
+    theta::Array{<:Real, 1},
+    p::Array{<:Real, 1},
+    q::Array{<:Real, 1},
+    idpq::Array{<:Int, 1},
+    id_slack::Int;
+    tol::Real = 1E-6,
+    maxiter::Int = 14)::Tuple{Array{<:Real, 1}, Array{<:Real, 1}, Int}
     #=
     This method is adapted from its version on the
     Pantagruel repository (https://doi.org/10.5281/zenodo.2642175).
@@ -138,7 +138,7 @@ function NRsolver(Ybus::SparseMatrixCSC{<:Complex, <:Int},
         dsdv = sparse(1:nb, 1:nb, Vc) * conj(Ybus) * sparse(1:nb, 1:nb, exp.(-im * theta)) +
                sparse(1:nb, 1:nb, exp.(im * theta) .* conj(Ybus * Vc))
         J = [real(dsdth[id, id]) real(dsdv[id, idpq])
-             imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
+            imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
         x = J \ dPQ
         theta[id] = theta[id] - x[1:(nb - 1)]
         if (!isempty(idpq))
