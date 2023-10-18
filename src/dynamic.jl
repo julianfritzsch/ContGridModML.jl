@@ -423,7 +423,7 @@ function update(p::Vector{T},
     i::Integer,
     f::Function)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
-    opt = Model(Gurobi.Optimizer)
+    opt = Model(opti)
     set_silent(opt)
     @variable(opt, x[1:(2 * n)])
     @constraint(opt, mp, eve * (p[1:n] .+ x[1:n]).>=0.0)

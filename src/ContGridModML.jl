@@ -2,10 +2,19 @@ module ContGridModML
 
 using LinearAlgebra, Ferrite, FerriteGmsh, FerriteViz, CairoMakie,
     Ferrite, Gmsh, SparseArrays, Flux, Random, HDF5, BlockArrays,
-    StatsBase, OrdinaryDiffEq, JuMP, Gurobi, Base.Threads,
+    StatsBase, OrdinaryDiffEq, JuMP, Gurobi, Ipopt, Base.Threads,
     DocStringExtensions, JSON3, PowerModels, Dates, DataFrames, CSV
 
 const MODULE_FOLDER = pkgdir(@__MODULE__)
+function __init__()
+    try
+        Gurobi.Env()
+        global opti = Gurobi.Optimizer
+    catch
+        println("Gurobi does not work on your system. Falling back to IPOPT.")
+        global opti = Ipopt.Optimizer
+    end
+end
 
 abstract type GridModel end
 
