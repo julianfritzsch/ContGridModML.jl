@@ -491,14 +491,14 @@ function learn_dynamical_parameters(;
         :abstol => 1e-3,
         :reltol => 1e-2),
     seed::Union{Nothing, Integer} = 1709,
-    n_points = 40,
-    n_coeffs = 1,
-    n_modes = 20,
-    n_epochs = 8000,
-    max_function::Function = (x) -> 30 * 2^(x / 500),
+    n_points::Integer = 40,
+    n_coeffs::Integer = 1,
+    n_modes::Integer = 20,
+    n_epochs::Integer = 8000,
+    max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
     train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    rng::AbstractRNG = Xoshiro(123))::DynamicSol
+    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
+    rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
     if train_ix !== nothing && test_ix !== nothing
