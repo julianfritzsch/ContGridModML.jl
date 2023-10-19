@@ -22,9 +22,13 @@ function static_to_dict(sol::StaticSol)::Dict{String, <:Any}
     re = Dict{String, Any}()
     cm_dict = cont_to_dict(sol.model)
     re["model"] = cm_dict
+    re["train_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
+                                           for (i, dm) in enumerate(sol.train_models))
+    re["test_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
+                                          for (i, dm) in enumerate(sol.test_models))
     re["type"] = "StaticSol"
     for key in fieldnames(StaticSol)
-        if key == :model
+        if key in [:model, :train_models, :test_models]
             continue
         end
         re[string(key)] = getfield(sol, key)
@@ -96,6 +100,12 @@ Load a static solution from a dictionary.
 """
 function dict_to_static(data::Dict{String, <:Any})::StaticSol
     data["model"] = cont_from_dict(data["model"])
+    data["train_models"] = [disc_from_dict(dm)
+                            for (_, dm) in sort(collect(data["train_models"]),
+        by = x -> parse(Int64, x[1]))]
+    data["test_models"] = [disc_from_dict(dm)
+                           for (_, dm) in sort(collect(data["test_models"]),
+        by = x -> parse(Int64, x[1]))]
     return StaticSol((data[string(key)] for key in fieldnames(StaticSol))...)
 end
 
@@ -301,6 +311,10 @@ function disc_to_dict(dm::DiscModel)::Dict{String, <:Any}
     re = Dict(string(key) => getfield(dm, key) for key in fieldnames(DiscModel))
     re["model"] = "DiscModel"
     return re
+end
+
+function disc_from_dict(dict::Dict{String, <:Any})::DiscModel
+    return DiscModel((dict[string(key)] for key in fieldnames(DiscModel))...)
 end
 
 function model_to_dict(model::GridModel)::Dict{String, <:Any}
