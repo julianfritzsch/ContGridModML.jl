@@ -98,6 +98,14 @@ struct StaticSol{T <: Real} <: ContSol
     The continuous model with the updated susceptances.
     """
     model::ContModel
+    """
+    The discrete models used for training.
+    """
+    train_models::Vector{<:DiscModel}
+    """
+    The discrete models used for testing.
+    """
+    test_models::Vector{<:DiscModel}
 end
 
 """

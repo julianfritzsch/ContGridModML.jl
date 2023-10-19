@@ -319,7 +319,7 @@ function learn_susceptances(;
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model)
+        train_losses, test_losses, model, train, test)
 end
 
 function learn_susceptances_dates(;
@@ -371,7 +371,7 @@ function learn_susceptances_dates(;
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model)
+        train_losses, test_losses, model, train, test)
 end
 
 """
