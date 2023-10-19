@@ -461,7 +461,7 @@ function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real}
     grid = distribute_country_load(grid, country)
     pm = instantiate_model(grid, DCMPPowerModel, build_opf)
     set_silent(pm.model)
-    result = optimize_model!(pm, optimizer = Gurobi.Optimizer)
+    result = optimize_model!(pm, optimizer = opti)
     if !(result["termination_status"] in [OPTIMAL LOCALLY_SOLVED ALMOST_OPTIMAL ALMOST_LOCALLY_SOLVED])
         throw(ErrorException("The OPF did not converge."))
     end
