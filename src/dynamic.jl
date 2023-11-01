@@ -64,7 +64,6 @@ $(TYPEDSIGNATURES)
 Create projectors for nodal values onto quadrature points and onto comparison locations.
 
 Returned projectors
-- `q_proj` Project the nodal values onto the quadrature points
 - `ω_proj` Project the nodal values onto the given comparison points. This is used to
     calculate the loss function.
 """
