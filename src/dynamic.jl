@@ -500,11 +500,12 @@ function learn_dynamical_parameters(;
     rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
-    if train_ix !== nothing && test_ix !== nothing
-        n_train = size(train_ix, 1)
-        n_test = size(test_ix, 1)
-    else
+    if isnothing(train_ix) && isnothing(test_ix)
         train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
+    elseif isnothing(train_ix)
+        train_ix, _ = gen_idxs(dm, dP, 0, n_test, seed = seed)
+    elseif isnothing(test_ix)
+        _, test_ix = gen_idxs(dm, dP, n_train, 0, seed = seed)
     end
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
     M, K, A, Af = assemble_matrices_dynamic(cm)
