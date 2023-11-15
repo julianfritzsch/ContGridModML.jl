@@ -1,7 +1,7 @@
 export get_mesh
 
 function get_mesh(file::String;
-    kwargs...)::Tuple{Grid, Real}
+        kwargs...)::Tuple{Grid, Real}
     if (contains(file, ".json"))
         get_mesh_from_json(file, kwargs...)
     elseif (contains(file, ".msh"))
@@ -19,10 +19,10 @@ The file can be saved to a file if fileout is specified.
 """
 
 function get_mesh_from_json(filein::String;
-    mesh_size::Real = 0.0,
-    mesh_size_max::Real = 0.1,
-    algo::Int = 7,
-    fileout::String = "")::Tuple{Grid, Real}
+        mesh_size::Real = 0.0,
+        mesh_size_max::Real = 0.1,
+        algo::Int = 7,
+        fileout::String = "")::Tuple{Grid, Real}
     border, scale_factor = import_border(filein)
     border = border[1:(end - 1), :]
 

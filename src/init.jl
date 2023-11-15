@@ -52,7 +52,7 @@ function get_q_proj(dh::DofHandler, cellvalues::CellScalarValues)::SparseMatrixC
 end
 
 function set_slack!(cm::ContModel,
-    dm::DiscModel)
+        dm::DiscModel)
     node_coords = [cm.dh.grid.nodes[i].x for i in 1:size(cm.dh.grid.nodes, 1)]
     disc_slack = [Ferrite.Vec(dm.coord[dm.id_slack, :]...)]
     id_slack = argmin(norm.(node_coords .- disc_slack))
@@ -66,7 +66,7 @@ function set_slack!(cm::ContModel,
 end
 
 function distribute_load!(cm::ContModel,
-    dm::DiscModel)::Nothing
+        dm::DiscModel)::Nothing
     pl, pg = zeros(ndofs(cm.dh)), zeros(ndofs(cm.dh))
     grid_coords = [node.x for node in cm.grid.nodes]
     ip = cm.dh.field_interpolations[1]
@@ -153,9 +153,9 @@ end
 Integrate a function over the whole area of the grid using the finite element method.
 """
 function integrate(dh::DofHandler,
-    cellvalues::CellScalarValues,
-    q_proj::SparseMatrixCSC,
-    vals::Vector{<:Real})::Real
+        cellvalues::CellScalarValues,
+        q_proj::SparseMatrixCSC,
+        vals::Vector{<:Real})::Real
     q_vals = q_proj * vals
     int = 0.0
     i = 1
@@ -180,13 +180,13 @@ end
 Interpolate values from the continues model from a  coordinate. If the given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
 function interpolate(x::Ferrite.Vec{2, T},
-    grid::Grid, dh::DofHandler,
-    u::Vector{<:Real},
-    fname::Symbol;
-    off::Real = 0.0,
-    factor::Real = 1.0,
-    extrapolate::Bool = true,
-    warn::Symbol = :semi)::Real where {T <: Real}
+        grid::Grid, dh::DofHandler,
+        u::Vector{<:Real},
+        fname::Symbol;
+        off::Real = 0.0,
+        factor::Real = 1.0,
+        extrapolate::Bool = true,
+        warn::Symbol = :semi)::Real where {T <: Real}
     return interpolate([x],
         grid,
         dh,
@@ -204,14 +204,14 @@ end
 Interpolate values from the continues model from a vector of coordinates. If a given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
 function interpolate(x::Vector{Ferrite.Vec{2, T}},
-    grid::Grid,
-    dh::DofHandler,
-    u::Vector{<:Real},
-    fname::Symbol;
-    off::Real = 0.0,
-    factor::Real = 1.0,
-    extrapolate::Bool = true,
-    warn::Symbol = :semi)::Vector{<:Real} where {T <: Real}
+        grid::Grid,
+        dh::DofHandler,
+        u::Vector{<:Real},
+        fname::Symbol;
+        off::Real = 0.0,
+        factor::Real = 1.0,
+        extrapolate::Bool = true,
+        warn::Symbol = :semi)::Vector{<:Real} where {T <: Real}
     ph = PointEvalHandler(grid, x, warn = (warn == :all))
     re = get_point_values(ph, dh, u, fname)
     nan_ix = findall(isnan.(re))

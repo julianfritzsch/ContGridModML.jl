@@ -6,15 +6,15 @@ $(TYPEDSIGNATURES)
 Load all the discrete models for the training and test data sets.
 """
 function discrete_models(train_folder::String,
-    test_folder::String,
-    scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
+        test_folder::String,
+        scale_factor::Real)::Tuple{Vector{DiscModel}, Vector{DiscModel}}
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
     return train, test
 end
 
 function load_discrete_models(foldername::String,
-    scale_factor::Real)::Vector{DiscModel}
+        scale_factor::Real)::Vector{DiscModel}
     dms = DiscModel[]
     for fn in joinpath.(foldername, readdir(foldername))
         push!(dms, load_discrete_model(fn, scale_factor))
@@ -23,9 +23,9 @@ function load_discrete_models(foldername::String,
 end
 
 function discrete_models_entsoe(pm::Dict{String, Any},
-    f_date::DateTime,
-    t_date::DateTime;
-    scale_factor::Real = 0)
+        f_date::DateTime,
+        t_date::DateTime;
+        scale_factor::Real = 0)
     df = DataFrame(CSV.File(MODULE_FOLDER * "/data/entsoe.csv"))
     t_range = f_date:Hour(1):t_date
     dms = Vector{DiscModel}(undef, size(t_range, 1))
@@ -63,8 +63,8 @@ $(TYPEDSIGNATURES)
 Assemble the force vectors for the static solutions.
 """
 function assemble_f_static(model::ContModel,
-    dataset::Vector{DiscModel},
-    Af::SparseMatrixCSC)::Matrix{<:Real}
+        dataset::Vector{DiscModel},
+        Af::SparseMatrixCSC)::Matrix{<:Real}
     f = zeros(ndofs(model.dh), length(dataset))
 
     for (i, dm) in enumerate(dataset)
@@ -101,10 +101,10 @@ The returned matrices are
     the DoF-handler
 """
 function assemble_matrices_static(model::ContModel)::Tuple{
-    SparseMatrixCSC,
-    SparseMatrixCSC,
-    SparseMatrixCSC,
-}
+        SparseMatrixCSC,
+        SparseMatrixCSC,
+        SparseMatrixCSC,
+    }
     n_cell = length(model.grid.cells)
     n_quad = getnquadpoints(model.cellvalues)
     n_dofs = ndofs(model.dh)
@@ -148,7 +148,7 @@ The returned matrices are
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
 function projectors_static(model::ContModel,
-    dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
+        dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
     return projectors_static_θ(model, dm), projectors_static_b(model)
 end
 
@@ -208,18 +208,18 @@ $(TYPEDSIGNATURES)
 Do the actual learning of the parameters.
 """
 function _learn_susceptances(A::AbstractSparseMatrix,
-    Islack::AbstractSparseMatrix,
-    q_proj::AbstractSparseMatrix,
-    disc_proj::AbstractSparseMatrix,
-    f_train::Matrix{T},
-    th_train::Matrix{T},
-    b::Vector{T},
-    n_epoch::Integer,
-    n_batch::Int;
-    opt = ADAM(0.1),
-    bmin::Real = 0.1,
-    rng::AbstractRNG = Xoshiro(123),
-    δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
+        Islack::AbstractSparseMatrix,
+        q_proj::AbstractSparseMatrix,
+        disc_proj::AbstractSparseMatrix,
+        f_train::Matrix{T},
+        th_train::Matrix{T},
+        b::Vector{T},
+        n_epoch::Integer,
+        n_batch::Int;
+        opt = ADAM(0.1),
+        bmin::Real = 0.1,
+        rng::AbstractRNG = Xoshiro(123),
+        δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
     param = Flux.params(b)
     n_train = size(f_train, 2)
     @assert mod(n_train, n_batch)==0 "The number of batches must be a divisor of the number of training cases."
@@ -279,15 +279,15 @@ by using the liear approximation provided by the finite element method.
 - `δ = 0.5`: Parameter of the Huber loss function
 """
 function learn_susceptances(;
-    train_folder::String = MODULE_FOLDER * "/data/ml/train",
-    test_folder::String = MODULE_FOLDER * "/data/ml/test",
-    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
-    n_epoch::Int = 10000,
-    n_batch::Int = 3,
-    rng::AbstractRNG = Xoshiro(123),
-    opt = ADAM(0.1),
-    bmin::Real = 0.1,
-    δ = 0.5)::StaticSol
+        train_folder::String = MODULE_FOLDER * "/data/ml/train",
+        test_folder::String = MODULE_FOLDER * "/data/ml/test",
+        mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+        n_epoch::Int = 10000,
+        n_batch::Int = 3,
+        rng::AbstractRNG = Xoshiro(123),
+        opt = ADAM(0.1),
+        bmin::Real = 0.1,
+        δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
@@ -323,18 +323,18 @@ function learn_susceptances(;
 end
 
 function learn_susceptances_dates(;
-    model_file::String = MODULE_FOLDER * "/data/pantagruel.json",
-    train_f_date::DateTime = DateTime(2021, 9, 17, 0),
-    train_t_date::DateTime = DateTime(2021, 9, 18, 23),
-    test_f_date::DateTime = DateTime(2021, 10, 17, 0),
-    test_t_date::DateTime = DateTime(2021, 10, 17, 11),
-    mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
-    n_epoch::Int = 10000,
-    n_batch::Int = 3,
-    rng::AbstractRNG = Xoshiro(123),
-    opt = ADAM(0.1),
-    bmin::Real = 0.1,
-    δ = 0.5)::StaticSol
+        model_file::String = MODULE_FOLDER * "/data/pantagruel.json",
+        train_f_date::DateTime = DateTime(2021, 9, 17, 0),
+        train_t_date::DateTime = DateTime(2021, 9, 18, 23),
+        test_f_date::DateTime = DateTime(2021, 10, 17, 0),
+        test_t_date::DateTime = DateTime(2021, 10, 17, 11),
+        mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+        n_epoch::Int = 10000,
+        n_batch::Int = 3,
+        rng::AbstractRNG = Xoshiro(123),
+        opt = ADAM(0.1),
+        bmin::Real = 0.1,
+        δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
     pm = parse_file(model_file)
     train = discrete_models_entsoe(pm,
@@ -380,9 +380,9 @@ $(TYPEDSIGNATURES)
 Obtain the prediction of the stable solution for the training and test data sets.
 """
 function prediction(K::AbstractSparseMatrix,
-    f_train::Matrix{T},
-    f_test::Matrix{T},
-    proj::AbstractSparseMatrix)::Tuple{Matrix{T}, Matrix{T}} where {T <: Real}
+        f_train::Matrix{T},
+        f_test::Matrix{T},
+        proj::AbstractSparseMatrix)::Tuple{Matrix{T}, Matrix{T}} where {T <: Real}
     return proj * (K \ f_train), proj * (K \ f_test)
 end
 
@@ -392,10 +392,10 @@ $(TYPEDSIGNATURES)
 Obtain the loss values for the training and test data sets.
 """
 function get_losses(train_pred::Matrix{<:Real},
-    test_pred::Matrix{<:Real},
-    t_train::Matrix{<:Real},
-    t_test::Matrix{<:Real};
-    δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
+        test_pred::Matrix{<:Real},
+        t_train::Matrix{<:Real},
+        t_test::Matrix{<:Real};
+        δ::Real = 1.0)::Tuple{Vector{<:Real}, Vector{<:Real}}
     train_losses = vcat(Flux.huber_loss(train_pred, t_train, delta = δ,
         agg = x -> mean(x, dims = 1))...)
     test_losses = vcat(Flux.huber_loss(test_pred, t_test, delta = δ,

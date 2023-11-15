@@ -14,11 +14,11 @@ The matrices returned are
 - `Af` the matrix needed to create the force vector as `f = Af * (p_quad + fault_quad)`
 """
 function assemble_matrices_dynamic(model::ContModel)::Tuple{
-    SparseMatrixCSC,
-    SparseMatrixCSC,
-    SparseMatrixCSC,
-    SparseMatrixCSC,
-}
+        SparseMatrixCSC,
+        SparseMatrixCSC,
+        SparseMatrixCSC,
+        SparseMatrixCSC,
+    }
     ndof = ndofs(model.dh)
     K_const = spzeros(2 * ndof, 2 * ndof)
     M_const = spzeros(2 * ndof, 2 * ndof)
@@ -68,8 +68,8 @@ Returned projectors
     calculate the loss function.
 """
 function projectors_dynamic(cm::ContModel,
-    dm::DiscModel,
-    ω_idxs::Vector{<:Integer})::SparseMatrixCSC
+        dm::DiscModel,
+        ω_idxs::Vector{<:Integer})::SparseMatrixCSC
     func_interpolations = Ferrite.get_func_interpolations(cm.dh, :u)
     grid_coords = [node.x for node in cm.grid.nodes]
     n_base_funcs = getnbasefunctions(cm.cellvalues)
@@ -99,10 +99,10 @@ $(TYPEDSIGNATURES)
 Assemble all the force vectors for the dynamical simulations.
 """
 function assemble_f_dynamic(cm::ContModel,
-    dm::DiscModel,
-    fault_ix::Vector{<:Integer},
-    dP::Union{Real, Vector{<:Real}},
-    Af::SparseMatrixCSC)::Matrix{<:Real}
+        dm::DiscModel,
+        fault_ix::Vector{<:Integer},
+        dP::Union{Real, Vector{<:Real}},
+        Af::SparseMatrixCSC)::Matrix{<:Real}
     @assert size(fault_ix) == size(dP)||isa(dP, Real) "The size of `fault_ix` and `dP` must match"
     if isa(dP, Real)
         dP = dP .* ones(size(fault_ix, 1))
@@ -130,10 +130,10 @@ possible indices. The number of points can be controlled by `n`, which gives the
 points in the largest dimension.
 """
 function generate_comp_idxs(cm::ContModel,
-    dm::DiscModel,
-    tri::Vector{<:Integer},
-    tei::Vector{<:Integer},
-    n::Int)::Vector{<:Integer}
+        dm::DiscModel,
+        tri::Vector{<:Integer},
+        tei::Vector{<:Integer},
+        n::Int)::Vector{<:Integer}
     grid_vals = Vector{Real}[]
     x_min, x_max = extrema(dm.coord[:, 1])
     y_min, y_max = extrema(dm.coord[:, 2])
@@ -163,10 +163,10 @@ $(TYPEDSIGNATURES)
 Randomly choose generators for the training and test sets.
 """
 function gen_idxs(dm::DiscModel,
-    dP::Real,
-    n_train::Integer,
-    n_test::Int;
-    seed::Union{Nothing, Integer} = nothing)::Tuple{Vector{<:Integer}, Vector{<:Integer}}
+        dP::Real,
+        n_train::Integer,
+        n_test::Int;
+        seed::Union{Nothing, Integer} = nothing)::Tuple{Vector{<:Integer}, Vector{<:Integer}}
     rng = Xoshiro(seed)
     idg = dm.id_gen[dm.p_gen .>= abs(dP)]
     tri = sort(sample(rng, idg, n_train, replace = false))
@@ -183,11 +183,11 @@ $(TYPEDSIGNATURES)
 Run a dynamical simulation of the discrete model.
 """
 function disc_dyn(dm::DiscModel,
-    fault_node::Integer,
-    fault_size::Real,
-    dt::Real,
-    tf::Real;
-    solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
+        fault_node::Integer,
+        fault_size::Real,
+        dt::Real,
+        tf::Real;
+        solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
     return disc_dynamics(dm,
         0.0,
         tf,
@@ -203,11 +203,11 @@ $(TYPEDSIGNATURES)
 Run a dynamical simulation of the continuous model.
 """
 function cont_dyn(M::SparseMatrixCSC,
-    K::SparseMatrixCSC,
-    f::Vector{<:Real},
-    u₀::Vector{<:Real},
-    tf::Real;
-    solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
+        K::SparseMatrixCSC,
+        f::Vector{<:Real},
+        u₀::Vector{<:Real},
+        tf::Real;
+        solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
     function dif!(du, u, _, _)
         du[:] .= K * u .+ f
     end
@@ -240,13 +240,13 @@ The continuous and discrete solutions are needed as well as the comparison indic
 to calculate the contributions from the loss function.
 """
 function lambda_dyn(cont_sol::ODESolution,
-    disc_sol::ODESolution,
-    M::SparseMatrixCSC,
-    K::SparseMatrixCSC,
-    ω_proj::SparseMatrixCSC,
-    tf::Real,
-    idxs::Vector{<:Integer};
-    solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
+        disc_sol::ODESolution,
+        M::SparseMatrixCSC,
+        K::SparseMatrixCSC,
+        ω_proj::SparseMatrixCSC,
+        tf::Real,
+        idxs::Vector{<:Integer};
+        solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
     function dif_lambda!(du::Vector{<:Real}, u::Vector{<:Real}, _, t::Real)
         du[:] .= -K' * u .+
                  ω_proj' * (ω_proj * cont_sol(t) .- disc_sol(t, Val{1}, idxs = idxs))
@@ -297,10 +297,10 @@ results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_c
 set to zero.
 """
 function init_expansion(eve::Matrix{<:Real},
-    n_modes::Integer,
-    n_coeffs::Integer,
-    m::Vector{<:Real},
-    d::Vector{<:Real})::Tuple{Vector{<:Real}, Matrix{<:Real}}
+        n_modes::Integer,
+        n_coeffs::Integer,
+        m::Vector{<:Real},
+        d::Vector{<:Real})::Tuple{Vector{<:Real}, Matrix{<:Real}}
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
@@ -319,20 +319,20 @@ The continuous solution is calculated first and then used to obtain the adjoint 
 the gradient and value of the loss function are calculated and returned.
 """
 function simul(disc_sol::ODESolution,
-    M_const::SparseMatrixCSC,
-    K_const::SparseMatrixCSC,
-    m::Vector{T},
-    d::Vector{T},
-    f::Vector{T},
-    A::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC,
-    ω_proj::SparseMatrixCSC,
-    g_proj::Vector{SparseMatrixCSC},
-    idxs::Vector{<:Integer},
-    u₀::Vector{T},
-    tf::Real;
-    cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{T}, T} where {T <: Real}
+        M_const::SparseMatrixCSC,
+        K_const::SparseMatrixCSC,
+        m::Vector{T},
+        d::Vector{T},
+        f::Vector{T},
+        A::SparseMatrixCSC,
+        q_proj::SparseMatrixCSC,
+        ω_proj::SparseMatrixCSC,
+        g_proj::Vector{SparseMatrixCSC},
+        idxs::Vector{<:Integer},
+        u₀::Vector{T},
+        tf::Real;
+        cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
+        lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{T}, T} where {T <: Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
@@ -349,9 +349,9 @@ $(TYPEDSIGNATURES)
 Calculate the gradient from the solution of the adjoint dynamics.
 """
 function grad(sol_cont::ODESolution,
-    sol_lambda::ODESolution,
-    g_proj::Vector{SparseMatrixCSC},
-    dt::Real = 0.1)
+        sol_lambda::ODESolution,
+        g_proj::Vector{SparseMatrixCSC},
+        dt::Real = 0.1)
     Nparam = size(g_proj, 1)
     function integrand!(du::Vector{<:Real}, t::Real)
         for i in 1:Nparam
@@ -385,9 +385,9 @@ $(TYPEDSIGNATURES)
 Calculate the value of the loss function.
 """
 function loss(sol_cont::ODESolution,
-    sol_disc::ODESolution,
-    ω_proj::SparseMatrixCSC,
-    idxs::Vector{<:Integer})::Vector{<:Real}
+        sol_disc::ODESolution,
+        ω_proj::SparseMatrixCSC,
+        idxs::Vector{<:Integer})::Vector{<:Real}
     function integrand!(du::Vector{<:Real}, t::Real)
         tmp = (ω_proj * sol_cont(t) .- sol_disc(t, Val{1}, idxs = idxs))
         du[:] .= 0.5 * tmp' * tmp
@@ -401,9 +401,9 @@ $(TYPEDSIGNATURES)
 Calculate the projection matrix of the discrete solution onto the adjoint solution.
 """
 function grad_proj(A::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC,
-    evecs::Matrix{<:Real},
-    n_coeffs::Integer)::Vector{SparseMatrixCSC}
+        q_proj::SparseMatrixCSC,
+        evecs::Matrix{<:Real},
+        n_coeffs::Integer)::Vector{SparseMatrixCSC}
     g_proj = Vector{SparseMatrixCSC}()
     for i in 1:n_coeffs
         push!(g_proj, A * spdiagm(q_proj * evecs[:, i]) * A')
@@ -417,10 +417,10 @@ $(TYPEDSIGNATURES)
 Update the parameters using a restricted gradient descent to ensure positiveness.
 """
 function update(p::Vector{T},
-    g::Vector{T},
-    eve::Matrix{T},
-    i::Integer,
-    f::Function)::Vector{T} where {T <: Real}
+        g::Vector{T},
+        eve::Matrix{T},
+        i::Integer,
+        f::Function)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
     opt = Model(opti)
     set_silent(opt)
@@ -477,26 +477,28 @@ the updates to the parameters are calculated using a constraint gradient descent
     `train_ix` and `test_ix` need to be passed.
 """
 function learn_dynamical_parameters(;
-    dm_fn::String = MODULE_FOLDER * "/data/dm.h5",
-    cm_fn::String = MODULE_FOLDER * "/data/cm.h5",
-    dP::Real = -9.0,
-    n_train::Integer = 12,
-    n_test::Integer = 4,
-    dt::Real = 0.01,
-    tf::Real = 25.0,
-    disc_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    cont_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-    lambda_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(:saveat => 0.1,
-        :abstol => 1e-3,
-        :reltol => 1e-2),
-    seed::Union{Nothing, Integer} = 1709,
-    n_points::Integer = 40,
-    n_coeffs::Integer = 1,
-    n_modes::Integer = 20,
-    n_epochs::Integer = 8000,
-    max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
-    train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-    test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
+        dm_fn::String = MODULE_FOLDER * "/data/dm.h5",
+        cm_fn::String = MODULE_FOLDER * "/data/cm.h5",
+        dP::Real = -9.0,
+        n_train::Integer = 12,
+        n_test::Integer = 4,
+        dt::Real = 0.01,
+        tf::Real = 25.0,
+        disc_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
+        cont_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
+        lambda_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(:saveat => 0.1,
+            :abstol => 1e-3,
+            :reltol => 1e-2),
+        seed::Union{Nothing, Integer} = 1709,
+        n_points::Integer = 40,
+        m_init::Union{Nothing, Vector{<:Real}} = nothing,
+        d_init::Union{Nothing, Vector{<:Real}} = nothing,
+        n_coeffs::Integer = 1,
+        n_modes::Integer = 20,
+        n_epochs::Integer = 8000,
+        max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
+        train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
+        test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
     rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
@@ -522,8 +524,12 @@ function learn_dynamical_parameters(;
     f_train = assemble_f_dynamic(cm, dm, train_ix, dP, Af)
     f_test = assemble_f_dynamic(cm, dm, test_ix, dP, Af)
     eve = lap_eigenvectors(cm)
-    m_init = 300 * rand(rng, ndofs(cm.dh)) .+ 50
-    d_init = 150 * rand(rng, ndofs(cm.dh)) .+ 25
+    if isnothing(m_init)
+        m_init = 300 * rand(rng, ndofs(cm.dh)) .+ 50
+    end
+    if isnothing(d_init)
+        d_init = 150 * rand(rng, ndofs(cm.dh)) .+ 25
+    end
     p, eve_p = init_expansion(eve, n_modes, n_coeffs, m_init, d_init)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
@@ -561,18 +567,18 @@ $(TYPEDSIGNATURES)
 Calculate the loss values for the test data sets.
 """
 function test_loss(disc_sols::Vector{ODESolution},
-    M_const::SparseMatrixCSC,
-    K_const::SparseMatrixCSC,
-    m::Vector{<:Real},
-    d::Vector{<:Real},
-    f_test::Array{<:Real, 2},
-    A::SparseMatrixCSC,
-    q_proj::SparseMatrixCSC,
-    ω_proj::SparseMatrixCSC,
-    idxs::Vector{<:Integer},
-    u₀::Vector{<:Real},
-    tf::Real;
-    cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Vector{<:Real}
+        M_const::SparseMatrixCSC,
+        K_const::SparseMatrixCSC,
+        m::Vector{<:Real},
+        d::Vector{<:Real},
+        f_test::Array{<:Real, 2},
+        A::SparseMatrixCSC,
+        q_proj::SparseMatrixCSC,
+        ω_proj::SparseMatrixCSC,
+        idxs::Vector{<:Integer},
+        u₀::Vector{<:Real},
+        tf::Real;
+        cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Vector{<:Real}
     n = size(f_test, 2)
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'

@@ -2,16 +2,16 @@
 $(TYPEDSIGNATURES)
 """
 function disc_dynamics(dm::DiscModel,
-    tstart::Real,
-    tend::Real,
-    delta_p::Union{Real, Vector{<:Real}},
-    faultid::Int;
-    dt::Real = 1e-2,  # Distance of time steps at which the solution is returned
-    tol::Real = 1e-10,  # Target tolerance for the Newtoon-Raphson solver
-    maxiter::Int = 30,  # Maximum iteration for the Newton-Raphson solver
-    dmin::Real = 1e-4,  # Minimum amount of damping for load buses
-    alg::OrdinaryDiffEqAlgorithm = TRBDF2(),  # The solver that is passed to the solve function
-    solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
+        tstart::Real,
+        tend::Real,
+        delta_p::Union{Real, Vector{<:Real}},
+        faultid::Int;
+        dt::Real = 1e-2,  # Distance of time steps at which the solution is returned
+        tol::Real = 1e-10,  # Target tolerance for the Newtoon-Raphson solver
+        maxiter::Int = 30,  # Maximum iteration for the Newton-Raphson solver
+        dmin::Real = 1e-4,  # Minimum amount of damping for load buses
+        alg::OrdinaryDiffEqAlgorithm = TRBDF2(),  # The solver that is passed to the solve function
+        solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::ODESolution
 
     # Data preperation
     Nbus = dm.Nbus
@@ -109,14 +109,14 @@ For information on solving the power flow equations with Newton-Raphson, see,
 for instance, V. Vittal and A. Bergen, Power systems analysis, Prentice Hall, 1999. 
 """
 function NRsolver(Ybus::SparseMatrixCSC{<:Complex, <:Int},
-    V::Array{<:Real, 1},
-    theta::Array{<:Real, 1},
-    p::Array{<:Real, 1},
-    q::Array{<:Real, 1},
-    idpq::Array{<:Int, 1},
-    id_slack::Int;
-    tol::Real = 1E-6,
-    maxiter::Int = 14)::Tuple{Array{<:Real, 1}, Array{<:Real, 1}, Int}
+        V::Array{<:Real, 1},
+        theta::Array{<:Real, 1},
+        p::Array{<:Real, 1},
+        q::Array{<:Real, 1},
+        idpq::Array{<:Int, 1},
+        id_slack::Int;
+        tol::Real = 1E-6,
+        maxiter::Int = 14)::Tuple{Array{<:Real, 1}, Array{<:Real, 1}, Int}
     #=
     This method is adapted from its version on the
     Pantagruel repository (https://doi.org/10.5281/zenodo.2642175).

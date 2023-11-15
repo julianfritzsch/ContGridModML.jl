@@ -126,11 +126,11 @@ Apply the Albers projection to a vector of coordinates. The coordinates need to 
 See https://en.wikipedia.org/wiki/Albers_projection
 """
 function albers_projection(coord::Matrix{<:Real};
-    lon0::Real = 13.37616 / 180 * pi,
-    lat0::Real = 46.94653 / 180 * pi,
-    lat1::Real = 10 / 180 * pi,
-    lat2::Real = 50 / 180 * pi,
-    R::Real = 6371.0)::Matrix{<:Real}
+        lon0::Real = 13.37616 / 180 * pi,
+        lat0::Real = 46.94653 / 180 * pi,
+        lat1::Real = 10 / 180 * pi,
+        lat2::Real = 50 / 180 * pi,
+        R::Real = 6371.0)::Matrix{<:Real}
     n = 1 / 2 * (sin(lat1) + sin(lat2))
     theta = n * (coord[:, 2] .- lon0)
     c = cos(lat1)^2 + 2 * n * sin(lat1)
@@ -173,7 +173,7 @@ end
 Save a continuous or discrete model to a hdf5 file.
 """
 function save_model(fn::String,
-    model::GridModel)::Nothing
+        model::GridModel)::Nothing
     tmp = model_to_dict(model)
     fid = h5open(fn, "w")
     dict_to_hdf5(tmp, fid)
@@ -331,7 +331,7 @@ end
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
 function load_discrete_model(dataname::String,
-    scaling_factor::Float64)::DiscModel
+        scaling_factor::Float64)::DiscModel
     if (contains(dataname, ".h5"))
         load_discrete_model_from_hdf5(dataname, scaling_factor)
     elseif (contains(dataname, ".json"))
@@ -342,7 +342,7 @@ function load_discrete_model(dataname::String,
 end
 
 function load_discrete_model_from_hdf5(dataname::String,
-    scaling_factor::Float64)::DiscModel
+        scaling_factor::Float64)::DiscModel
     data = h5read(dataname, "/")
     coord = albers_projection(data["bus_coord"] ./ (180 / pi))
     coord ./= scaling_factor
@@ -365,8 +365,8 @@ function load_discrete_model_from_hdf5(dataname::String,
 end
 
 function load_discrete_model_from_json(dataname::String,
-    project::Bool,
-    scale_factor::Real)
+        project::Bool,
+        scale_factor::Real)
     data = JSON3.read(dataname, Dict)
     return load_discrete_model_from_powermodels(data,
         project,
@@ -374,7 +374,7 @@ function load_discrete_model_from_json(dataname::String,
 end
 
 function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::Bool,
-    scale_factor::Real)::DiscModel
+        scale_factor::Real)::DiscModel
     bus_label = sort!([parse(Int, i) for i in keys(data["bus"])])
     bus_id = Dict{String, Int}(string(j) => i for (i, j) in enumerate(bus_label))
     n_bus = size(bus_label, 1)
