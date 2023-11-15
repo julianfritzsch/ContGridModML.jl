@@ -213,14 +213,16 @@ function _learn_susceptances(A::AbstractSparseMatrix,
         disc_proj::AbstractSparseMatrix,
         f_train::Matrix{T},
         th_train::Matrix{T},
-        b::Vector{T},
+        p::Vector{T},
+        eve::Matrix{T},
+        comp_ix::Vector{Int},
         n_epoch::Integer,
         n_batch::Int;
         opt = ADAM(0.1),
         bmin::Real = 0.1,
         rng::AbstractRNG = Xoshiro(123),
         δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
-    param = Flux.params(b)
+    param = Flux.params(p)
     n_train = size(f_train, 2)
     @assert mod(n_train, n_batch)==0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batch)
@@ -233,19 +235,19 @@ function _learn_susceptances(A::AbstractSparseMatrix,
             batch = shuffled_ix[((k - 1) * batch_size + 1):(k * batch_size)]
             local loss
             gs = Flux.gradient(param) do
-                btemp = max.(b, bmin)
+                btemp = max.(eve * p, bmin)
                 K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
                 θ = disc_proj * (K \ f_train[:, batch])
-                loss = Flux.huber_loss(θ, th_train[:, batch], delta = δ)
+                loss = Flux.huber_loss(θ[comp_ix, :], th_train[comp_ix, batch], delta = δ)
             end
             losses[e, k] = loss
-            if (mod(e, 50) == 0 && k == 1)
+            if (mod(e, 50) == 0 && k == n_batch)
                 println(string(e) * ", " * string(mean(losses[e, :])))
             end
             Flux.update!(opt, param, gs)
         end
     end
-    return max.(b, bmin), losses
+    return max.(eve * p, bmin), losses
 end
 
 """
@@ -284,6 +286,11 @@ function learn_susceptances(;
         mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
         n_epoch::Int = 10000,
         n_batch::Int = 3,
+        n_modes::Int = 654,
+        n_coeffs::Int = 1,
+        comp_ix::Union{Nothing, Vector{Int}} = nothing,
+        bx_init::Union{Nothing, Vector{<:Real}} = nothing,
+        by_init::Union{Nothing, Vector{<:Real}} = nothing,
         rng::AbstractRNG = Xoshiro(123),
         opt = ADAM(0.1),
         bmin::Real = 0.1,
@@ -301,10 +308,23 @@ function learn_susceptances(;
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
-    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
-
+    if isnothing(comp_ix)
+        comp_ix = collect(1:(train[1].Nbus))
+    end
+    eve = lap_eigenvectors(model)
+    if isnothing(bx_init)
+        bx_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
+    end
+    if isnothing(by_init)
+        by_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
+    end
+    p, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init)
+    p_sorted = zeros(2 * n_modes)
+    p_sorted[1:2:end] = p[1:n_modes]
+    p_sorted[2:2:end] = p[(n_modes + 1):end]
+    eve_sorted = kron(eve_p, Matrix(1.0I, 2, 2))
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
-        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
+        th_train, p_sorted, eve_sorted, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
 
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
@@ -329,6 +349,11 @@ function learn_susceptances_dates(;
         test_f_date::DateTime = DateTime(2021, 10, 17, 0),
         test_t_date::DateTime = DateTime(2021, 10, 17, 11),
         mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
+        n_modes::Int = 654,
+        n_coeffs::Int = 1,
+        comp_ix::Union{Nothing, Vector{Int}} = nothing,
+        bx_init::Union{Nothing, Vector{<:Real}} = nothing,
+        by_init::Union{Nothing, Vector{<:Real}} = nothing,
         n_epoch::Int = 10000,
         n_batch::Int = 3,
         rng::AbstractRNG = Xoshiro(123),
@@ -352,10 +377,23 @@ function learn_susceptances_dates(;
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
 
-    binit = 20 * rand(rng, 2 * ndofs(model.dh)) .+ 90
-
+    if isnothing(comp_ix)
+        comp_ix = collect(1:(train[1].Nbus))
+    end
+    eve = lap_eigenvectors(model)
+    if isnothing(bx_init)
+        bx_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
+    end
+    if isnothing(by_init)
+        by_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
+    end
+    p, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init)
+    p_sorted = zeros(2 * n_modes)
+    p_sorted[1:2:end] = p[1:n_modes]
+    p_sorted[2:2:end] = p[(n_modes + 1):end]
+    eve_sorted = kron(eve_p, Matrix(1.0I, 2, 2))
     b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
-        th_train, binit, n_epoch, n_batch, bmin = bmin, rng = rng)
+        th_train, p_sorted, eve_sorted, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
 
     K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
