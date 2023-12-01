@@ -160,20 +160,48 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Randomly choose generators for the training and test sets.
+Randomly choose generators from a homoegenous distribution for the training and test sets.
 """
-function gen_idxs(dm::DiscModel,
+function gen_idxs(cm::ContModel,
+        dm::DiscModel,
         dP::Real,
         n_train::Integer,
-        n_test::Int;
+        n_test::Integer;
         seed::Union{Nothing, Integer} = nothing)::Tuple{Vector{<:Integer}, Vector{<:Integer}}
     rng = Xoshiro(seed)
-    idg = dm.id_gen[dm.p_gen .>= abs(dP)]
-    tri = sort(sample(rng, idg, n_train, replace = false))
-    tei = sort(sample(rng,
-        Int64.(collect(setdiff(Set(idg), Set(tri)))),
+    n_vals = 0
+    n = 2
+    pidxs = dm.id_gen[dm.p_gen .>= abs(dP)]
+    idxs = Set()
+    while n_vals < n_train + n_test
+        grid_vals = Vector{Real}[]
+        x_min, x_max = extrema(dm.coord[:, 1])
+        y_min, y_max = extrema(dm.coord[:, 2])
+        dx = max((x_max - x_min) / n, (y_max - y_min) / n)
+        for i in x_min:dx:x_max
+            for j in y_min:dx:y_max
+                ph = PointEvalHandler(cm.dh.grid,
+                    [Ferrite.Vec(i, j)],
+                    warn = false)
+                if ph.cells[1] !== nothing
+                    push!(grid_vals, [i; j])
+                end
+            end
+        end
+        grid_vals = reduce(vcat, grid_vals')
+        idxs = Set()
+        for point in eachrow(grid_vals)
+            push!(idxs,
+                argmin(map(norm, eachslice(dm.coord[pidxs, :]' .- point, dims = 2))))
+        end
+        n_vals = length(idxs)
+        n += 1
+    end
+    tri = pidxs[sort(sample(rng, Int64.(collect(idxs)), n_train, replace = false))]
+    tei = pidxs[sort(sample(rng,
+        Int64.(collect(setdiff(idxs, Set(tri)))),
         n_test,
-        replace = false))
+        replace = false))]
     return tri, tei
 end
 
@@ -503,11 +531,11 @@ function learn_dynamical_parameters(;
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
     if isnothing(train_ix) && isnothing(test_ix)
-        train_ix, test_ix = gen_idxs(dm, dP, n_train, n_test, seed = seed)
+        train_ix, test_ix = gen_idxs(cm, dm, dP, n_train, n_test, seed = seed)
     elseif isnothing(train_ix)
-        train_ix, _ = gen_idxs(dm, dP, 0, n_test, seed = seed)
+        train_ix, _ = gen_idxs(cm, dm, dP, 0, n_test, seed = seed)
     elseif isnothing(test_ix)
-        _, test_ix = gen_idxs(dm, dP, n_train, 0, seed = seed)
+        _, test_ix = gen_idxs(cm, dm, dP, n_train, 0, seed = seed)
     end
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
     M, K, A, Af = assemble_matrices_dynamic(cm)
