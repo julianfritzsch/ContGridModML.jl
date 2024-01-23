@@ -291,8 +291,6 @@ for batch in 1:n_batches
 end
 ```
 
-See: [`ContGridModML.susceptances`](@ref)
-
 ### Calculate the predictions
 
 The predictions are calculated like shown in the previous section.

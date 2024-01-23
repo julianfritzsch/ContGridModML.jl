@@ -7,7 +7,7 @@ Description of internally used functions for the learning of the static paramete
 
 ```@contents
 Pages = ["static.md"]
-Depths = 2:2
+Depth = 2:2
 ```
 
 ## Index
@@ -18,14 +18,7 @@ Pages = ["static.md"]
 
 ## Functions
 
-```@docs
-ContGridModML.assemble_disc_theta
-ContGridModML.assemble_f_static
-ContGridModML.assemble_matrices_static
-ContGridModML.check_slack
-ContGridModML.discrete_models
-ContGridModML.get_losses
-ContGridModML.prediction
-ContGridModML.projectors_static
-ContGridModML.susceptances
+```@autodocs
+Modules = [ContGridModML]
+Pages = ["static.jl"]
 ```

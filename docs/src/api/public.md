@@ -6,7 +6,7 @@ Exported functions and types of `ContGridMod.jl`.
 
 ```@contents
 Pages = ["public.md"]
-Depths = 2:2
+Depth = 2:2
 ```
 
 ## Index

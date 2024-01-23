@@ -1,6 +1,6 @@
 # Machine Learning Package for ContGridMod
 
-Implementation of physics-informed machine learning routines for the continous power grid model package [`ContGridMod`](https://github.com/laurentpagnier/ContGridMod.jl).
+Implementation of physics-informed machine learning routines for the continuous power grid model package [`ContGridMod`](https://github.com/laurentpagnier/ContGridMod.jl).
 
 ## Installation
 
@@ -18,7 +18,7 @@ julia> Pkg.add(url="https://github.com/julianfritzsch/ContGridModML.jl")
 ## Quickstart Guide
 
 To reproduce the results you only need to run two functions.
-The static paramaters, *i.e.*, the susceptances in ``x`` and ``y`` direction (``b_x(\mathbf{r})`` and ``b_y(\mathbf{r})``), can be learned by running
+The static parameters, *i.e.*, the susceptances in ``x`` and ``y`` direction (``b_x(\mathbf{r})`` and ``b_y(\mathbf{r})``), can be learned by running
 ```julia-repl
 julia> sol = learn_susceptances()
 ```

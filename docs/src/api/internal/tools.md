@@ -8,7 +8,7 @@ At the moment they are all related to loading and saving the solution structures
 
 ```@contents
 Pages = ["tools.md"]
-Depths = 2:2
+Depth = 2:2
 ```
 
 ## Index
@@ -19,11 +19,7 @@ Pages = ["tools.md"]
 
 ## Functions
 
-```@docs
-ContGridModML.dynamic_to_dict
-ContGridModML.static_to_dict
-ContGridModML.sol_to_dict
-ContGridModML.dict_to_sol
-ContGridModML.dict_to_static
-ContGridModML.dict_to_dynamic
+```@autodocs
+Modules = [ContGridModML]
+Pages = ["tools.jl"]
 ```
