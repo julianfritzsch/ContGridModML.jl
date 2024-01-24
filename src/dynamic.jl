@@ -18,7 +18,7 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
         SparseMatrixCSC,
         SparseMatrixCSC,
         SparseMatrixCSC,
-    }
+}
     ndof = ndofs(model.dh)
     K_const = spzeros(2 * ndof, 2 * ndof)
     M_const = spzeros(2 * ndof, 2 * ndof)
