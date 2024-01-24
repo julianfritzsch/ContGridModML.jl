@@ -1,7 +1,7 @@
 export init_model, integrate, interpolate, distribute_load!, set_slack!
 
 """
-    get_params(grid::Grid, tf::Real, dm::DiscModel; κ::Real=1.0, u_min::Real=0.1, σ::Real=0.01, bfactor::Real=1.0, bmin::Real=1000.)::ContModel
+$(TYPEDSIGNATURES)
 
 Create a continuous model from a discrete model by using a diffusion process to distribute the paramters.
 """
@@ -51,6 +51,9 @@ function get_q_proj(dh::DofHandler, cellvalues::CellScalarValues)::SparseMatrixC
     return q_proj
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function set_slack!(cm::ContModel,
         dm::DiscModel)
     node_coords = [cm.dh.grid.nodes[i].x for i in 1:size(cm.dh.grid.nodes, 1)]
@@ -65,6 +68,9 @@ function set_slack!(cm::ContModel,
     nothing
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function distribute_load!(cm::ContModel,
         dm::DiscModel)::Nothing
     pl, pg = zeros(ndofs(cm.dh)), zeros(ndofs(cm.dh))
@@ -115,6 +121,9 @@ function distribute_load!(cm::ContModel,
     return nothing
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real)::Nothing
     fault = zeros(ndofs(cm.dh))
     if abs(dP) < 1e-10
@@ -148,7 +157,7 @@ function set_local_disturbance!(cm::ContModel, coord::Vector{<:Real}, dP::Real):
 end
 
 """
-    integrate(dh::DofHandler, cellvalues::CellScalarValues, f::Function)::Real
+$(TYPEDSIGNATURES)
 
 Integrate a function over the whole area of the grid using the finite element method.
 """
@@ -175,7 +184,7 @@ function integrate(cm::ContModel, vals::Vector{<:Real})::Real
 end
 
 """
-    interpolate(x::Vector{Tensor{1,2,<:Real}}, grid::Grid, dh::DofHandler, u::Vector{<:Real}, fname::Symbol; off::Real=0.0, factor::Real=1.0, extrapolate::Bool=true, warn::Symbol=:semi)::Vector{<:Real}
+$(TYPEDSIGNATURES)
 
 Interpolate values from the continues model from a  coordinate. If the given coordinate is outside the grid it is replaced by the closed value on the grid.
 """
@@ -199,7 +208,7 @@ function interpolate(x::Ferrite.Vec{2, T},
 end
 
 """
-    interpolate(x::Vector{Tensor{1,2,<:Real}}, grid::Grid, dh::DofHandler, u::Vector{<:Real}, fname::Symbol; off::Real=0.0, factor::Real=1.0, extrapolate::Bool=true, warn::Symbol=:semi)::Vector{<:Real}
+$(TYPEDSIGNATURES)
 
 Interpolate values from the continues model from a vector of coordinates. If a given coordinate is outside the grid it is replaced by the closed value on the grid.
 """

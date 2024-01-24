@@ -1,7 +1,6 @@
 """
 $(TYPEDSIGNATURES)
 """
-
 function cont_dynamics(model::ContModel,
         p::Real,
         coord::Vector{<:Real},

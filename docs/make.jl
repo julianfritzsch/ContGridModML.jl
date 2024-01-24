@@ -18,7 +18,9 @@ makedocs(sitename = "ContGridModML",
                 "api/internal/tools.md",
                 "api/internal/mesh.md",
                 "api/internal/init.md",
-                "api/internal/disc_dynamics.md"
+                "api/internal/disc_dynamics.md",
+                "api/internal/cont_dynamics.md",
+                "api/internal/plot.md"
             ],
         ],
     ])
