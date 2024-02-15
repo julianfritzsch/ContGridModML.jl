@@ -137,7 +137,7 @@ function NRsolver(Ybus::SparseMatrixCSC{<:Complex, <:Int},
         dsdv = sparse(1:nb, 1:nb, Vc) * conj(Ybus) * sparse(1:nb, 1:nb, exp.(-im * theta)) +
                sparse(1:nb, 1:nb, exp.(im * theta) .* conj(Ybus * Vc))
         J = [real(dsdth[id, id]) real(dsdv[id, idpq])
-            imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
+             imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
         x = J \ dPQ
         theta[id] = theta[id] - x[1:(nb - 1)]
         if (!isempty(idpq))

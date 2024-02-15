@@ -103,7 +103,7 @@ The returned matrices are
 function assemble_matrices_static(model::ContModel)::Tuple{
         SparseMatrixCSC,
         SparseMatrixCSC,
-        SparseMatrixCSC,
+        SparseMatrixCSC
 }
     n_cell = length(model.grid.cells)
     n_quad = getnquadpoints(model.cellvalues)

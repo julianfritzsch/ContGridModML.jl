@@ -23,9 +23,9 @@ function static_to_dict(sol::StaticSol)::Dict{String, <:Any}
     cm_dict = cont_to_dict(sol.model)
     re["model"] = cm_dict
     re["train_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
-                                           for (i, dm) in enumerate(sol.train_models))
+    for (i, dm) in enumerate(sol.train_models))
     re["test_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
-                                          for (i, dm) in enumerate(sol.test_models))
+    for (i, dm) in enumerate(sol.test_models))
     re["type"] = "StaticSol"
     for key in fieldnames(StaticSol)
         if key in [:model, :train_models, :test_models]

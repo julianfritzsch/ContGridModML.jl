@@ -17,7 +17,7 @@ function assemble_matrices_dynamic(model::ContModel)::Tuple{
         SparseMatrixCSC,
         SparseMatrixCSC,
         SparseMatrixCSC,
-        SparseMatrixCSC,
+        SparseMatrixCSC
 }
     ndof = ndofs(model.dh)
     K_const = spzeros(2 * ndof, 2 * ndof)
@@ -167,7 +167,8 @@ function gen_idxs(cm::ContModel,
         dP::Real,
         n_train::Integer,
         n_test::Integer;
-        seed::Union{Nothing, Integer} = nothing)::Tuple{Vector{<:Integer}, Vector{<:Integer}}
+        seed::Union{Nothing, Integer} = nothing)::Tuple{
+        Vector{<:Integer}, Vector{<:Integer}}
     rng = Xoshiro(seed)
     n_vals = 0
     n = 2
@@ -360,7 +361,8 @@ function simul(disc_sol::ODESolution,
         u₀::Vector{T},
         tf::Real;
         cont_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-        lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{Vector{T}, T} where {T <: Real}
+        lambda_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}())::Tuple{
+        Vector{T}, T} where {T <: Real}
     M = M_const + A * spdiagm(q_proj * m) * A'
     K = K_const - A * spdiagm(q_proj * d) * A'
     cont_sol = cont_dyn(M, K, f, u₀, tf, solve_kwargs = cont_kwargs)
