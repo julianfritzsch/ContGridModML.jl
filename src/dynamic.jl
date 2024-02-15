@@ -245,7 +245,7 @@ function cont_dyn(M::SparseMatrixCSC,
     end
     rhs = ODEFunction(dif!, mass_matrix = M, jac_prototype = K, jac = jac!)
     problem = ODEProblem(rhs, u₀, (0.0, tf))
-    sol_cont = solve(problem, Trapezoid(); solve_kwargs...)
+    sol_cont = solve(problem, Rodas5P(); solve_kwargs...)
     return sol_cont
 end
 
@@ -288,7 +288,7 @@ function lambda_dyn(cont_sol::ODESolution,
         jac_prototype = K',
         jac = jac_lambda!)
     problem_lambda = ODEProblem(rhs_lambda, zeros(size(M', 1)), (tf, 0))
-    sol_lambda = solve(problem_lambda, Trapezoid(); solve_kwargs...)
+    sol_lambda = solve(problem_lambda, Trapezoid(), dense = false; solve_kwargs...)
     return sol_lambda
 end
 
@@ -514,8 +514,7 @@ function learn_dynamical_parameters(;
         tf::Real = 25.0,
         disc_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
         cont_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(),
-        lambda_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(:saveat => 0.1,
-            :abstol => 1e-3,
+        lambda_solve_kwargs::Dict{Symbol, <:Any} = Dict{Symbol, Any}(:abstol => 1e-3,
             :reltol => 1e-2),
         seed::Union{Nothing, Integer} = 1709,
         n_points::Integer = 40,
@@ -526,7 +525,8 @@ function learn_dynamical_parameters(;
         n_epochs::Integer = 8000,
         max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
         train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-        test_ix::Union{Nothing, Vector{<:Integer}} = nothing)::DynamicSol
+        test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
+        n_batches::Integer = 1)::DynamicSol
     rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
@@ -537,6 +537,9 @@ function learn_dynamical_parameters(;
     elseif isnothing(test_ix)
         _, test_ix = gen_idxs(cm, dm, dP, n_train, 0, seed = seed)
     end
+    n_test = size(test_ix, 1)
+    n_train = size(train_ix, 1)
+    batch_size = Int(ceil(n_train / n_batches))
     comp_idxs = generate_comp_idxs(cm, dm, train_ix, test_ix, n_points)
     M, K, A, Af = assemble_matrices_dynamic(cm)
     ω_proj = projectors_dynamic(cm, dm, comp_idxs)
@@ -576,7 +579,16 @@ function learn_dynamical_parameters(;
             losses[i, j] = l
             GC.gc()
         end
-        p = update(p, sum(grads, dims = 2)[:, 1], eve_p, i, max_function)
+        ix = shuffle(rng, 1:n_train)
+        for i in 1:n_batches
+            p = update(p,
+                sum(grads[:, ix[((i - 1) * batch_size + 1):min(i * batch_size, n_train)]],
+                    dims = 2)[:,
+                    1],
+                eve_p,
+                i,
+                max_function)
+        end
     end
     m = eve_p * p[1:n_modes]
     d = eve_p * p[(n_modes + 1):end]
