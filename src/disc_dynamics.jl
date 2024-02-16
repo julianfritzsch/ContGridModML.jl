@@ -100,8 +100,7 @@ function disc_dynamics(dm::DiscModel,
 end
 
 """
-    
-    NRsolver(Ybus::SparseMatrixCSC{<:Complex,<:Int}, V::Array{<:Real,1}, theta::Array{<:Real,1}, p::Array{<:Real,1}, q::Array{<:Real,1}, idpq::Array{<:Int,1}, id_slack::Int[, tol::Real=1E-6, maxiter::Int=14])::Tuple{Array{<:Real,1},Array{<:Real,1},Int}
+$(TYPEDSIGNATURES)
 
 Use the Newton Raphson method to solve the powerflow equations.This method is
 adapted from its version on the Pantagruel repository (https://doi.org/10.5281/zenodo.2642175).
@@ -138,7 +137,7 @@ function NRsolver(Ybus::SparseMatrixCSC{<:Complex, <:Int},
         dsdv = sparse(1:nb, 1:nb, Vc) * conj(Ybus) * sparse(1:nb, 1:nb, exp.(-im * theta)) +
                sparse(1:nb, 1:nb, exp.(im * theta) .* conj(Ybus * Vc))
         J = [real(dsdth[id, id]) real(dsdv[id, idpq])
-            imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
+             imag(dsdth[idpq, id]) imag(dsdv[idpq, idpq])]
         x = J \ dPQ
         theta[id] = theta[id] - x[1:(nb - 1)]
         if (!isempty(idpq))

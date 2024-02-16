@@ -1,5 +1,8 @@
 export nodal_plot
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function nodal_plot(model::ContModel,
         fieldname::Symbol;
         kwargs...)::Figure
@@ -7,6 +10,9 @@ function nodal_plot(model::ContModel,
     nodal_plot(model, val; kwargs...)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function nodal_plot(model::ContModel,
         val::Vector{<:Real};
         logarithmic::Bool = false,

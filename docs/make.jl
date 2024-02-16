@@ -8,7 +8,7 @@ makedocs(sitename = "ContGridModML",
         "Implementation" => [
             "Finite Element Method" => "implementation/finite.md",
             "General Implementation" => "implementation/general.md",
-            "Learn Susceptances" => "implementation/static.md",
+            "Learn Susceptances" => "implementation/static.md"
         ],
         "API" => [
             "Public" => "api/public.md",
@@ -18,9 +18,11 @@ makedocs(sitename = "ContGridModML",
                 "api/internal/tools.md",
                 "api/internal/mesh.md",
                 "api/internal/init.md",
-                "api/internal/disc_dynamics.md"
-            ],
-        ],
+                "api/internal/disc_dynamics.md",
+                "api/internal/cont_dynamics.md",
+                "api/internal/plot.md"
+            ]
+        ]
     ])
 
 deploydocs(repo = "github.com/julianfritzsch/ContGridModML.jl.git", devbranch = "dev")

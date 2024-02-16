@@ -23,9 +23,9 @@ function static_to_dict(sol::StaticSol)::Dict{String, <:Any}
     cm_dict = cont_to_dict(sol.model)
     re["model"] = cm_dict
     re["train_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
-                                           for (i, dm) in enumerate(sol.train_models))
+    for (i, dm) in enumerate(sol.train_models))
     re["test_models"] = Dict{String, Any}(string(i) => disc_to_dict(dm)
-                                          for (i, dm) in enumerate(sol.test_models))
+    for (i, dm) in enumerate(sol.test_models))
     re["type"] = "StaticSol"
     for key in fieldnames(StaticSol)
         if key in [:model, :train_models, :test_models]
@@ -120,7 +120,7 @@ function dict_to_dynamic(data::Dict{String, <:Any})::DynamicSol
 end
 
 """
-    albers_projection(coord::Array{<:Real,2}; # as latitude, longitude  lon0::Real=13.37616 / 180 * pi, lat0::Real=46.94653 / 180 * pi, lat1::Real=10 / 180 * pi, lat2::Real=50 / 180 * pi, R::Real=6371.0)::Array{<:Real,2}
+$(TYPEDSIGNATURES)
 
 Apply the Albers projection to a vector of coordinates. The coordinates need to be given as latitude, longitude.
 See https://en.wikipedia.org/wiki/Albers_projection
@@ -142,7 +142,7 @@ function albers_projection(coord::Matrix{<:Real};
 end
 
 """
-    import_border(filename::String)::Tuple{Array{2,<:Real},Real}
+$(TYPEDSIGNATURES)
 
 Import border from a json file, apply the Albers projection and rescale it such that the longest dimension is 1.
 The coordinates need to be given as latitude, longitude.
@@ -168,7 +168,7 @@ function import_border(filename::String)::Tuple{Matrix{<:Real}, <:Real}
 end
 
 """
-    to_jld2(fn::String, model::Union{ContModel,DiscModel})::nothing
+$(TYPEDSIGNATURES)
 
 Save a continuous or discrete model to a hdf5 file.
 """
@@ -181,7 +181,7 @@ function save_model(fn::String,
 end
 
 """
-    from_jld2(fn::String)::Union{ContModel, DiscModel}
+$(TYPEDSIGNATURES)
 
 Load a continuous or discrete model from a hdf5 file.
 """
@@ -198,6 +198,9 @@ function load_model(fn::String)::GridModel
     end
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function hdf5_to_dict(fid::HDF5.H5DataStore)::Dict{String, <:Any}
     re = Dict{String, Any}()
     for k in keys(fid)
@@ -210,6 +213,9 @@ function hdf5_to_dict(fid::HDF5.H5DataStore)::Dict{String, <:Any}
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function dict_to_hdf5(data::Dict, fid::HDF5.H5DataStore)::Nothing
     for (k, i) in data
         if typeof(i) <: Dict
@@ -222,6 +228,9 @@ function dict_to_hdf5(data::Dict, fid::HDF5.H5DataStore)::Nothing
     return nothing
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function cont_from_dict(data::Dict{String, <:Any})::ContModel
     cells = [Cell{data["grid"]["celltype"]...}(Tuple(x))
              for x in eachrow(data["grid"]["cells"])]
@@ -251,6 +260,9 @@ function cont_from_dict(data::Dict{String, <:Any})::ContModel
         q_proj)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
     re = Dict{String, Any}()
     cells = reduce(vcat, [[x.nodes...]' for x in cm.grid.cells])
@@ -298,25 +310,40 @@ function cont_to_dict(cm::ContModel)::Dict{String, <:Any}
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function sparse_to_dict(sm::SparseMatrixCSC)::Dict{String, <:Any}
     re = Dict(string(key) => getfield(sm, key) for key in fieldnames(SparseMatrixCSC))
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function dict_to_sparse(dict::Dict{String, Any})::SparseMatrixCSC
     return SparseMatrixCSC([dict[string(key)] for key in fieldnames(SparseMatrixCSC)]...)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function disc_to_dict(dm::DiscModel)::Dict{String, <:Any}
     re = Dict(string(key) => getfield(dm, key) for key in fieldnames(DiscModel))
     re["model"] = "DiscModel"
     return re
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function disc_from_dict(dict::Dict{String, <:Any})::DiscModel
     return DiscModel((dict[string(key)] for key in fieldnames(DiscModel))...)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function model_to_dict(model::GridModel)::Dict{String, <:Any}
     if typeof(model) <: ContModel
         return cont_to_dict(model)
@@ -326,7 +353,7 @@ function model_to_dict(model::GridModel)::Dict{String, <:Any}
 end
 
 """
-    load_discrete_model(dataname::String, scaling_factor::Float64)::DiscModel
+$(TYPEDSIGNATURES)
 
 Load a discrete model from a file and rescale the coordinates to match the continuous model.
 """
@@ -364,6 +391,9 @@ function load_discrete_model_from_hdf5(dataname::String,
     return dm
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function load_discrete_model_from_json(dataname::String,
         project::Bool,
         scale_factor::Real)
@@ -373,6 +403,9 @@ function load_discrete_model_from_json(dataname::String,
         scale_factor)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::Bool,
         scale_factor::Real)::DiscModel
     bus_label = sort!([parse(Int, i) for i in keys(data["bus"])])
@@ -433,6 +466,9 @@ function load_discrete_model_from_powermodels(data::Dict{String, Any}, project::
     return dm
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function remove_nan(grid::Dict{String, Any})
     for v in values(grid["gen"])
         isnan(v["pg"]) && (v["pg"] = 0)
@@ -447,6 +483,9 @@ function remove_nan(grid::Dict{String, Any})
     return grid
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function distribute_country_load(grid::Dict{String, Any}, country::Dict{String, <:Real})
     Sb = grid["baseMVA"]
     for key in keys(grid["load"])
@@ -457,6 +496,9 @@ function distribute_country_load(grid::Dict{String, Any}, country::Dict{String, 
     return grid
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real})
     grid = distribute_country_load(grid, country)
     pm = instantiate_model(grid, DCMPPowerModel, build_opf)
@@ -469,6 +511,9 @@ function opf_from_country(grid::Dict{String, Any}, country::Dict{String, <:Real}
     return remove_nan(grid)
 end
 
+"""
+$(TYPEDSIGNATURES)
+"""
 function stable_sol!(cm::ContModel)
     if cm.id_slack == 0
         println("Slack bus not set, setting it to 1")
