@@ -148,8 +148,8 @@ The returned matrices are
     be ordered as ``b_x(\\mathbf{r_1}), b_y(\\mathbf{r_1}), b_x(\\mathbf{r_2}),\\dots``
 """
 function projectors_static(model::ContModel,
-        dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    return projectors_static_θ(model, dm), projectors_static_b(model)
+        dm::DiscModel)::Tuple{SparseMatrixCSC, SparseMatrixCSC, SparseMatrixCSC}
+    return projectors_static_θ(model, dm), projectors_static_b_diag(model), projectors_static_b_off(model)
 end
 
 function projectors_static_θ(model::ContModel, dm::DiscModel)::SparseMatrixCSC
@@ -178,7 +178,7 @@ function projectors_static_θ(model::ContModel, dm::DiscModel)::SparseMatrixCSC
     return θ_proj
 end
 
-function projectors_static_b(model::ContModel)::SparseMatrixCSC
+function projectors_static_b_diag(model::ContModel)::SparseMatrixCSC
     interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
     n_dofs = ndofs(model.dh)
     n_cell_dofs = length(model.dh.cell_dofs)
@@ -202,6 +202,29 @@ function projectors_static_b(model::ContModel)::SparseMatrixCSC
     return q_proj_b
 end
 
+function projectors_static_b_off(model::ContModel)::SparseMatrixCSC
+    interp_fun = Ferrite.get_func_interpolations(model.dh, :u)[1]
+    n_dofs = ndofs(model.dh)
+    n_cell_dofs = length(model.dh.cell_dofs)
+    q_proj_b = spzeros(n_cell_dofs, n_dofs)
+    ix = 1
+    for cell in CellIterator(model.dh)
+        Ferrite.reinit!(model.cellvalues, cell)
+        cell_dofs = celldofs(cell)
+        for q in 1:getnquadpoints(model.cellvalues)
+            point = spatial_coordinate(model.cellvalues,
+                q, getcoordinates(cell))
+            ph = PointEvalHandler(model.grid, [Ferrite.Vec(point...)])
+            pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], interp_fun)
+            for j in 1:getnbasefunctions(model.cellvalues)
+                q_proj_b[ix, cell_dofs[j]] = pv.N[j]
+            end
+            ix += 1
+        end
+    end
+    return q_proj_b
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -209,34 +232,42 @@ Do the actual learning of the parameters.
 """
 function _learn_susceptances(A::AbstractSparseMatrix,
         Islack::AbstractSparseMatrix,
-        q_proj::AbstractSparseMatrix,
+        q_proj_diag::AbstractSparseMatrix,
+        q_proj_off::AbstractSparseMatrix,
         disc_proj::AbstractSparseMatrix,
         f_train::Matrix{T},
         th_train::Matrix{T},
-        p::Vector{T},
-        eve::Matrix{T},
+        p_diag::Vector{T},
+        eve_diag::Matrix{T},
+        p_xy::Vector{T},
+        p_yx::Vector{T},
+        eve_off::Matrix{T},
         comp_ix::Vector{Int},
         n_epoch::Integer,
         n_batch::Int;
         opt = ADAM(0.1),
         bmin::Real = 0.1,
         rng::AbstractRNG = Xoshiro(123),
-        δ::Real = 1.0)::Tuple{Vector{T}, Matrix{T}} where {T <: Real}
-    param = Flux.params(p)
+        δ::Real = 1.0)::Tuple{Vector{T}, Vector{T}, Vector{T}, Matrix{T}} where {T <: Real}
+    param = Flux.params(p_diag, p_xy, p_yx)
     n_train = size(f_train, 2)
     @assert mod(n_train, n_batch)==0 "The number of batches must be a divisor of the number of training cases."
     batch_size = Int(n_train / n_batch)
 
     losses = zeros(n_epoch, n_batch)
-    n_q = size(q_proj, 1)
+    n_q = size(q_proj_diag, 1)
     for e in 1:n_epoch
         shuffled_ix = randperm(rng, n_train)
         for k in 1:n_batch
             batch = shuffled_ix[((k - 1) * batch_size + 1):(k * batch_size)]
             local loss
             gs = Flux.gradient(param) do
-                btemp = max.(eve * p, bmin)
-                K = A * sparse(1:n_q, 1:n_q, q_proj * btemp) * A' + Islack
+                btemp = max.(eve_diag * p_diag, bmin)
+                bxytmp = eve_off * p_xy
+                byxtmp = eve_off * p_yx
+                K = A * (sparse(1:n_q, 1:n_q, q_proj_diag * btemp) + sparse(1:2:n_q, 2:2:n_q, q_proj_off * bxytmp, n_q, n_q) + sparse(2:2:n_q, 1:2:n_q, q_proj_off * byxtmp, n_q, n_q)) * A' + Islack
+                # K = A * (sparse(1:n_q, 1:n_q, q_proj_diag * btemp)) * A' + Islack
+
                 θ = disc_proj * (K \ f_train[:, batch])
                 loss = Flux.huber_loss(θ[comp_ix, :], th_train[comp_ix, batch], delta = δ)
             end
@@ -247,7 +278,7 @@ function _learn_susceptances(A::AbstractSparseMatrix,
             Flux.update!(opt, param, gs)
         end
     end
-    return max.(eve * p, bmin), losses
+    return max.(eve_diag * p_diag, bmin), eve_off * p_xy, eve_off * p_yx, losses
 end
 
 """
@@ -291,10 +322,12 @@ function learn_susceptances(;
         comp_ix::Union{Nothing, Vector{Int}} = nothing,
         bx_init::Union{Nothing, Vector{<:Real}} = nothing,
         by_init::Union{Nothing, Vector{<:Real}} = nothing,
+        bxy_init::Union{Nothing, Vector{<:Real}} = nothing,
+        byx_init::Union{Nothing, Vector{<:Real}} = nothing,
         rng::AbstractRNG = Xoshiro(123),
         opt = ADAM(0.1),
         bmin::Real = 0.1,
-        δ = 0.5)::StaticSol
+        δ = 0.5)::Tuple{StaticSol, Vector{<:Real}, Vector{<:Real}}
     mesh, scale_factor = get_mesh(mesh_fn)
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
@@ -303,7 +336,7 @@ function learn_susceptances(;
     model = init_model(mesh)
     set_slack!(model, train[1])
     Af, Ak, Islack = assemble_matrices_static(model)
-    disc_proj, q_proj_b = projectors_static(model, train[1])
+    disc_proj, q_proj_b_diag, q_proj_b_off = projectors_static(model, train[1])
 
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
@@ -318,15 +351,23 @@ function learn_susceptances(;
     if isnothing(by_init)
         by_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
     end
-    p, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init)
-    p_sorted = zeros(2 * n_modes)
-    p_sorted[1:2:end] = p[1:n_modes]
-    p_sorted[2:2:end] = p[(n_modes + 1):end]
+    if isnothing(bxy_init)
+        bxy_init = 5 * rand(rng, ndofs(model.dh)) .+ 22.5
+    end
+    if isnothing(byx_init)
+        byx_init = 5 * rand(rng, ndofs(model.dh)) .+ 22.5
+    end
+    p_diag, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init) # p_diag contains [bx; by]
+    p_off, _ = init_expansion(eve, n_modes, n_coeffs, bxy_init, byx_init) # p_off contains [bxy; byx]
+    p_diag_sorted = zeros(2 * n_modes)
+    p_diag_sorted[1:2:end] = p_diag[1:n_modes]
+    p_diag_sorted[2:2:end] = p_diag[(n_modes + 1):end]
     eve_sorted = kron(eve_p, Matrix(1.0I, 2, 2))
-    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
-        th_train, p_sorted, eve_sorted, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
+    b, b_xy, b_yx, losses = _learn_susceptances(Ak, Islack, q_proj_b_diag, q_proj_b_off, disc_proj, f_train,
+        th_train, p_diag_sorted, eve_sorted, p_off[1:n_modes], p_off[n_modes+1:end], eve_p, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
 
-    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
+    n_q = size(q_proj_b_diag, 1)
+    K = Ak * (spdiagm(q_proj_b_diag * b) + sparse(1:2:n_q, 2:2:n_q, q_proj_b_off * b_xy, n_q, n_q) + sparse(2:2:n_q, 1:2:n_q, q_proj_b_off * b_yx, n_q, n_q))* Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
 
     f_test = assemble_f_static(model, test, Af)
@@ -339,7 +380,7 @@ function learn_susceptances(;
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model, train, test)
+        train_losses, test_losses, model, train, test), b_xy, b_yx
 end
 
 function learn_susceptances_dates(;
@@ -354,12 +395,14 @@ function learn_susceptances_dates(;
         comp_ix::Union{Nothing, Vector{Int}} = nothing,
         bx_init::Union{Nothing, Vector{<:Real}} = nothing,
         by_init::Union{Nothing, Vector{<:Real}} = nothing,
+        bxy_init::Union{Nothing, Vector{<:Real}} = nothing,
+        byx_init::Union{Nothing, Vector{<:Real}} = nothing,
         n_epoch::Int = 10000,
         n_batch::Int = 3,
         rng::AbstractRNG = Xoshiro(123),
         opt = ADAM(0.1),
         bmin::Real = 0.1,
-        δ = 0.5)::StaticSol
+        δ = 0.5)::Tuple{StaticSol, Vector{<:Real}, Vector{<:Real}}
     mesh, scale_factor = get_mesh(mesh_fn)
     pm = parse_file(model_file)
     train = discrete_models_entsoe(pm,
@@ -372,7 +415,7 @@ function learn_susceptances_dates(;
     model = init_model(mesh)
     set_slack!(model, train[1])
     Af, Ak, Islack = assemble_matrices_static(model)
-    disc_proj, q_proj_b = projectors_static(model, train[1])
+    disc_proj, q_proj_b_diag, q_proj_b_off = projectors_static(model, train[1])
 
     f_train = assemble_f_static(model, train, Af)
     th_train = assemble_disc_theta(train)
@@ -387,15 +430,23 @@ function learn_susceptances_dates(;
     if isnothing(by_init)
         by_init = 20 * rand(rng, ndofs(model.dh)) .+ 90
     end
-    p, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init)
-    p_sorted = zeros(2 * n_modes)
-    p_sorted[1:2:end] = p[1:n_modes]
-    p_sorted[2:2:end] = p[(n_modes + 1):end]
+    if isnothing(bxy_init)
+        bxy_init = 5 * rand(rng, ndofs(model.dh)) .+ 22.5
+    end
+    if isnothing(byx_init)
+        byx_init = 5 * rand(rng, ndofs(model.dh)) .+ 22.5
+    end
+    p_diag, eve_p = init_expansion(eve, n_modes, n_coeffs, bx_init, by_init) # p_diag contains [bx; by]
+    p_off, _ = init_expansion(eve, n_modes, n_coeffs, bxy_init, byx_init) # p_off contains [bxy; byx]
+    p_diag_sorted = zeros(2 * n_modes)
+    p_diag_sorted[1:2:end] = p_diag[1:n_modes]
+    p_diag_sorted[2:2:end] = p_diag[(n_modes + 1):end]
     eve_sorted = kron(eve_p, Matrix(1.0I, 2, 2))
-    b, losses = _learn_susceptances(Ak, Islack, q_proj_b, disc_proj, f_train,
-        th_train, p_sorted, eve_sorted, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
+    b, b_xy, b_yx, losses = _learn_susceptances(Ak, Islack, q_proj_b_diag, q_proj_b_off, disc_proj, f_train,
+        th_train, p_diag_sorted, eve_sorted, p_off[1:n_modes], p_off[n_modes+1:end], eve_p, comp_ix, n_epoch, n_batch, bmin = bmin, rng = rng)
 
-    K = Ak * spdiagm(q_proj_b * b) * Ak' + Islack
+    n_q = size(q_proj_b_diag, 1)
+    K = Ak * (spdiagm(q_proj_b_diag * b) + sparse(1:2:n_q, 2:2:n_q, q_proj_b_off * b_xy, n_q, n_q) + sparse(2:2:n_q, 1:2:n_q, q_proj_b_off * b_yx, n_q, n_q))* Ak' + Islack
     model.θ₀ = K \ f_train[:, 1]
 
     f_test = assemble_f_static(model, test, Af)
@@ -405,11 +456,10 @@ function learn_susceptances_dates(;
 
     model.bx = b[1:2:end]
     model.by = b[2:2:end]
-    distribute_load!(model, train[1])
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model, train, test)
+        train_losses, test_losses, model, train, test), b_xy, b_yx
 end
 
 """
