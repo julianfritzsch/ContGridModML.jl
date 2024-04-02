@@ -68,6 +68,156 @@ function set_slack!(cm::ContModel,
     nothing
 end
 
+
+"""
+$(TYPEDSIGNATURES)
+"""
+function distribute_parameters!(cm::ContModel, dm::DiscModel; σ::Real=0.02, bfactor::Real=0.1, bmin::Real=0.1)::Nothing
+    distribute_inertia!(cm, dm)
+    distribute_damping!(cm, dm)
+    distribute_load!(cm, dm)
+    distribute_susceptances!(cm, dm, σ, bfactor, bmin)
+end
+
+"""
+$(TYPEDSIGNATURES)
+"""
+function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfactor::Real, bmin::Real)::Nothing
+    function bb(dm, x)
+        ds = dm.coord[dm.id_line[:, 2], :] .- dm.coord[dm.id_line[:, 1], :]
+        re = zeros(2)
+        for (i, row) in enumerate(eachrow(ds))
+            if norm(row) == 0
+                continue
+            end
+            # Divide the line parameters into x and y components
+            b = dm.b[i] * row / norm(row) * bfactor
+            # Where does the straight line from (x, y) intersect the line from bx and by (t = 0 start point, t = 1 end point of line)
+            t = (row[1] * (x[1] - dm.coord[dm.id_line[i, 1], 1]) + row[2] * (x[2] - dm.coord[dm.id_line[i, 1], 2])) / norm(row)^2
+            dist = 0
+            # If shortest path intersects line, distance is the length of shortest path
+            if 0 ≤ t ≤ 1
+                dist = norm(x .- (dm.coord[dm.id_line[i, 1], :] .+ t * row))
+            # Else take distance to closest endpoint
+            elseif t < 0
+                dist = norm(x .- dm.coord[dm.id_line[i, 1], :])
+            else
+                dist = norm(x .- dm.coord[dm.id_line[i, 2], :])
+            end
+            if dist < σ
+                re += abs.(b)
+            end
+        end
+        return re
+    end
+    
+    bx = zeros(ndofs(cm.dh))
+    by = zeros(ndofs(cm.dh))
+    coords = [cm.dh.grid.nodes[i].x for i in unique(reduce(vcat, [collect(cm.dh.grid.cells[i].nodes) for i in 1:size(cm.dh.grid.cells, 1)]))]
+
+    for (i, x) in enumerate(coords)
+        bx[i], by[i] = bb(dm, x)
+    end
+
+    cm.bx[:] .= max.(bx, bmin)
+    cm.by[:] .= max.(by, bmin)
+    return nothing
+end
+
+
+"""
+$(TYPEDSIGNATURES)
+"""
+function distribute_inertia!(cm::ContModel, dm::DiscModel)::Nothing
+    m = zeros(ndofs(cm.dh))
+    grid_coords = [node.x for node in cm.grid.nodes]
+    ip = cm.dh.field_interpolations[1]
+    # assuming that m(x) is a sum of delta functions
+    for (i, ix) in enumerate(dm.id_gen)
+        if dm.p_gen[i] == 0
+            continue
+        end
+        coord = dm.coord[ix, :]
+        point = Ferrite.Vec(coord...)
+        ph = PointEvalHandler(cm.grid, [point], warn = :false)
+        if ph.cells[1] === nothing
+            min_ix = argmin([norm(coord .- point)
+                             for coord in grid_coords])
+            ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+        end
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
+        for j in 1:getnbasefunctions(cm.cellvalues)
+            m[cell_dofs[j]] += dm.m_gen[i] * pv.N[j]
+        end
+    end
+
+    # Normalize values
+    m .*= sum(dm.m_gen[dm.p_gen .> 0]) / integrate(cm, m)
+
+    cm.m[:] .= m
+
+    return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+"""
+function distribute_damping!(cm::ContModel,
+        dm::DiscModel)::Nothing
+    dl, dg = zeros(ndofs(cm.dh)), zeros(ndofs(cm.dh))
+    grid_coords = [node.x for node in cm.grid.nodes]
+    ip = cm.dh.field_interpolations[1]
+    # assuming that p(x) is a sum of delta functions
+    for (i, point) in enumerate(eachrow(dm.coord))
+        point = Ferrite.Vec(point...)
+        ph = PointEvalHandler(cm.grid, [point], warn = :false)
+        # If no cell is found (the point is outside the grid),
+        # use the closest grid point instead
+        if ph.cells[1] === nothing
+            min_ix = argmin([norm(coord .- point)
+                             for coord in grid_coords])
+            ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+        end
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
+        for j in 1:getnbasefunctions(cm.cellvalues)
+            dl[cell_dofs[j]] -= dm.d_load[i] * pv.N[j]
+        end
+    end
+
+    for (i, ix) in enumerate(dm.id_gen)
+        if dm.p_gen[i] == 0
+            continue
+        end
+        coord = dm.coord[ix, :]
+        point = Ferrite.Vec(coord...)
+        ph = PointEvalHandler(cm.grid, [point], warn = :false)
+        if ph.cells[1] === nothing
+            min_ix = argmin([norm(coord .- point)
+                             for coord in grid_coords])
+            ph = PointEvalHandler(cm.grid, [grid_coords[min_ix]])
+        end
+        pv = Ferrite.PointScalarValuesInternal(ph.local_coords[1], ip)
+        cell_dofs = Vector{Int}(undef, ndofs_per_cell(cm.dh, ph.cells[1]))
+        Ferrite.celldofs!(cell_dofs, cm.dh, ph.cells[1])
+        for j in 1:getnbasefunctions(cm.cellvalues)
+            dg[cell_dofs[j]] += dm.d_gen[i] * pv.N[j]
+        end
+    end
+
+    # Normalize values
+    dg .*= sum(dm.d_gen[dm.p_gen .> 0]) / integrate(cm, dg)
+    dl .*= sum(dm.d_load) / integrate(cm, dl)
+
+    cm.d[:] .= dg + dl
+
+    return nothing
+end
+
+
 """
 $(TYPEDSIGNATURES)
 """

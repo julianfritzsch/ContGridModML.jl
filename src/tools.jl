@@ -149,7 +149,7 @@ The coordinates need to be given as latitude, longitude.
 """
 function import_border(filename::String)::Tuple{Matrix{<:Real}, <:Real}
     data = JSON3.read(filename)[:border]
-    N = size(data["border"], 1)
+    N = size(data, 1)
 
     b = zeros(N, 2)
     for i in 1:N
