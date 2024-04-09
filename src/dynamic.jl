@@ -300,19 +300,54 @@ Calculate the eigenvectors of the unweighted Laplacian of the grid used for the 
     simulations.
 """
 function lap_eigenvectors(cm::ContModel)::Matrix{<:Real}
-    N = ndofs(cm.dh)
-    lap = zeros(N, N)
-    for cell in CellIterator(cm.dh)
-        i, j, k = celldofs(cell)
-        lap[i, j] = lap[j, i] = -1
-        lap[i, k] = lap[k, i] = -1
-        lap[k, j] = lap[j, k] = -1
+    # N = ndofs(cm.dh)
+    # lap = zeros(N, N)
+    # for cell in CellIterator(cm.dh)
+    #     i, j, k = celldofs(cell)
+    #     lap[i, j] = lap[j, i] = -1
+    #     lap[i, k] = lap[k, i] = -1
+    #     lap[k, j] = lap[j, k] = -1
+    # end
+    # for i in 1:N
+    #     lap[i, i] = -sum(lap[i, :])
+    # end
+    # _, eve = eigen(lap)
+    function assembleLaplacian!(K::SparseMatrixCSC, B::SparseMatrixCSC, dh::DofHandler, cellvalues::CellScalarValues)
+        n_basefuncs = getnbasefunctions(cellvalues)
+        Kₑ = zeros(n_basefuncs, n_basefuncs)
+        Bₑ = zeros(n_basefuncs, n_basefuncs)
+    
+        assembler = start_assemble(K)
+        assembler2 = start_assemble(B)
+    
+        for cell in CellIterator(dh)
+            fill!(Kₑ, 0)
+            fill!(Bₑ, 0)
+            Ferrite.reinit!(cellvalues, cell)
+    
+            for q_point in 1:getnquadpoints(cellvalues)
+                dΩ = getdetJdV(cellvalues, q_point)
+                for i in 1:n_basefuncs
+                    ∇φᵢ = shape_gradient(cellvalues, q_point, i)
+                    φᵢ = shape_value(cellvalues, q_point, i)
+                    for j in 1:n_basefuncs
+                        ∇φⱼ = shape_gradient(cellvalues, q_point, j)
+                        φⱼ = shape_value(cellvalues, q_point, j)
+                        Kₑ[i, j] += ∇φᵢ ⋅ ∇φⱼ * dΩ
+                        Bₑ[i, j] += φᵢ ⋅ φⱼ * dΩ
+                    end
+                end
+            end
+            assemble!(assembler, celldofs(cell), Kₑ)
+            assemble!(assembler2, celldofs(cell), Bₑ)
+        end
+        return K, B
     end
-    for i in 1:N
-        lap[i, i] = -sum(lap[i, :])
-    end
-    _, eve = eigen(lap)
-    return eve
+    OpeK = create_sparsity_pattern(cm.dh)
+    OpeB = create_sparsity_pattern(cm.dh)
+    assembleLaplacian!(OpeK, OpeB, cm.dh, cm.cellvalues)
+    _, evec = eigen(Matrix(-OpeK), Matrix(OpeB))
+    return evec[:, end:-1:1]
 end
 
 """
@@ -325,7 +360,8 @@ eigenvectors are chosen. The first `n_coeffs` coefficients are chosen by project
 results of the heat equation diffusion onto the eigenvectors. The `n_modes - n_coeffs` are
 set to zero.
 """
-function init_expansion(eve::Matrix{<:Real},
+function init_expansion(cm::ContModel,
+    eve::Matrix{<:Real},
         n_modes::Integer,
         n_coeffs::Integer,
         m::Vector{<:Real},
@@ -333,8 +369,8 @@ function init_expansion(eve::Matrix{<:Real},
     @assert n_coeffs<=n_modes "The number of coefficients must be less or equal the number of modes"
     coeffs = zeros(2 * n_modes)
     for i in 1:n_coeffs
-        coeffs[i] = m' * eve[:, i]
-        coeffs[i + n_modes] = d' * eve[:, i]
+        coeffs[i] = integrate(cm, m .* eve[:, i])
+        coeffs[i + n_modes] = integrate(cm, d .* eve[:, i])
     end
     return coeffs, eve[:, 1:n_modes]
 end
@@ -563,7 +599,7 @@ function learn_dynamical_parameters(;
     if isnothing(d_init)
         d_init = 150 * rand(rng, ndofs(cm.dh)) .+ 25
     end
-    p, eve_p = init_expansion(eve, n_modes, n_coeffs, m_init, d_init)
+    p, eve_p = init_expansion(cm, eve, n_modes, n_coeffs, m_init, d_init)
     losses = zeros(n_epochs, n_train)
     grads = zeros(2 * n_modes, n_train)
     g_proj = grad_proj(A, cm.q_proj, eve_p, n_modes)

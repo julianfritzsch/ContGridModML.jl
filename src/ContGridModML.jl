@@ -106,6 +106,10 @@ struct StaticSol{T <: Real} <: ContSol
     The discrete models used for testing.
     """
     test_models::Vector{<:DiscModel}
+    """
+    The number of eigenmodes of the Laplacian the model is trained on
+    """
+    n_modes::Int
 end
 
 """
@@ -166,6 +170,10 @@ struct DynamicSol <: ContSol
     The continuous model with updated inertia and damping.
     """
     model::ContModel
+    """
+    The number of eigenmodes of the Laplacian the model is trained on
+    """
+    n_modes::Int
 end
 
 include("init.jl")

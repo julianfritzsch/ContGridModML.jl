@@ -90,6 +90,9 @@ function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfacto
             if norm(row) == 0
                 continue
             end
+            if dm.b[i] > 1e4
+                continue
+            end
             # Divide the line parameters into x and y components
             b = dm.b[i] * row / norm(row) * bfactor
             # Where does the straight line from (x, y) intersect the line from bx and by (t = 0 start point, t = 1 end point of line)
