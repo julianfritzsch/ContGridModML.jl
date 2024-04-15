@@ -450,13 +450,14 @@ function update(p::Vector{T},
         g::Vector{T},
         eve::Matrix{T},
         i::Integer,
-        f::Function)::Vector{T} where {T <: Real}
+        f::Function,
+        u_min::Real)::Vector{T} where {T <: Real}
     n = size(p, 1) ÷ 2
     opt = Model(opti)
     set_silent(opt)
     @variable(opt, x[1:(2 * n)])
-    @constraint(opt, mp, eve * (p[1:n] .+ x[1:n]).>=0.0)
-    @constraint(opt, dp, eve * (p[(n + 1):end] .+ x[(n + 1):end]).>=0.0)
+    @constraint(opt, mp, eve * (p[1:n] .+ x[1:n]).>=u_min)
+    @constraint(opt, dp, eve * (p[(n + 1):end] .+ x[(n + 1):end]).>=u_min)
     @constraint(opt, ms, sum(x[1:(2 * n)] .^ 2)<=f(i))
     @objective(opt, Min, g'*x[1:(2 * n)])
     optimize!(opt)
@@ -528,7 +529,8 @@ function learn_dynamical_parameters(;
         max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
         train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
         test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
-        n_batches::Integer = 1)::DynamicSol
+        n_batches::Integer = 1,
+        u_min::Real=0.1)::DynamicSol
     rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
@@ -589,7 +591,8 @@ function learn_dynamical_parameters(;
                     1],
                 eve_p,
                 i,
-                max_function)
+                max_function,
+                u_min)
         end
     end
     m = eve_p * p[1:n_modes]
