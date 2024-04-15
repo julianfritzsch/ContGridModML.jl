@@ -6,9 +6,9 @@ $(TYPEDSIGNATURES)
 function get_mesh(file::String;
         kwargs...)::Tuple{Grid, Real}
     if (contains(file, ".json"))
-        get_mesh_from_json(file, kwargs...)
+        get_mesh_from_json(file; kwargs...)
     elseif (contains(file, ".msh"))
-        get_mesh_from_mesh(file, kwargs...)
+        get_mesh_from_mesh(file; kwargs...)
     else
         error("This type of file is not supported.")
     end
@@ -51,8 +51,8 @@ function get_mesh_from_json(filein::String;
     gmsh.model.geo.synchronize()
 
     # Define algo and coarseness
-    gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
-    gmsh.model.mesh.set_algorithm(2, 1, algo) # dim = 2, assuming there's only one surface
+    # gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
+    # gmsh.model.mesh.set_algorithm(2, 1, algo) # dim = 2, assuming there's only one surface
 
     # Generate a 2D mesh
     gmsh.model.mesh.generate(2)
