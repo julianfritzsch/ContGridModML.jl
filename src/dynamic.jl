@@ -523,17 +523,23 @@ function learn_dynamical_parameters(;
         n_points::Integer = 40,
         m_init::Union{Nothing, Vector{<:Real}} = nothing,
         d_init::Union{Nothing, Vector{<:Real}} = nothing,
-        n_coeffs::Integer = 1,
-        n_modes::Integer = 20,
+        n_modes::Union{Nothing, Int} = nothing,
+        n_coeffs::Union{Nothing, Int} = nothing,
         n_epochs::Integer = 8000,
         max_function::Function = (x) -> 30 * 2^(-(x - 1) / 500),
         train_ix::Union{Nothing, Vector{<:Integer}} = nothing,
         test_ix::Union{Nothing, Vector{<:Integer}} = nothing,
         n_batches::Integer = 1,
-        u_min::Real=0.1)::DynamicSol
+        u_min::Real = 0.1)::DynamicSol
     rng = Xoshiro(seed)
     dm = load_model(dm_fn)
     cm = load_model(cm_fn)
+    if isnothing(n_modes)
+        n_modes = size(cm.grid.nodes, 1)
+    end
+    if isnothing(n_coeffs) || (n_coeffs > n_modes)
+        n_coeffs = n_modes
+    end
     if isnothing(train_ix) && isnothing(test_ix)
         train_ix, test_ix = gen_idxs(cm, dm, dP, n_train, n_test, seed = seed)
     elseif isnothing(train_ix)
@@ -603,7 +609,7 @@ function learn_dynamical_parameters(;
     cm.d = d
 
     return DynamicSol(train_ix, test_ix, comp_idxs, m, d, p, eve,
-        losses, losses[end, :], test_losses, cm)
+        losses, losses[end, :], test_losses, cm, n_modes)
 end
 
 """

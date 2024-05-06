@@ -68,11 +68,11 @@ function set_slack!(cm::ContModel,
     nothing
 end
 
-
 """
 $(TYPEDSIGNATURES)
 """
-function distribute_parameters!(cm::ContModel, dm::DiscModel; σ::Real=0.02, bfactor::Real=0.1, bmin::Real=0.1)::Nothing
+function distribute_parameters!(cm::ContModel, dm::DiscModel; σ::Real = 0.02,
+        bfactor::Real = 0.1, bmin::Real = 0.1)::Nothing
     distribute_inertia!(cm, dm)
     distribute_damping!(cm, dm)
     distribute_load!(cm, dm)
@@ -82,7 +82,8 @@ end
 """
 $(TYPEDSIGNATURES)
 """
-function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfactor::Real, bmin::Real)::Nothing
+function distribute_susceptances!(
+        cm::ContModel, dm::DiscModel, σ::Real, bfactor::Real, bmin::Real)::Nothing
     function bb(dm, x)
         ds = dm.coord[dm.id_line[:, 2], :] .- dm.coord[dm.id_line[:, 1], :]
         re = zeros(2)
@@ -96,12 +97,13 @@ function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfacto
             # Divide the line parameters into x and y components
             b = dm.b[i] * row / norm(row) * bfactor
             # Where does the straight line from (x, y) intersect the line from bx and by (t = 0 start point, t = 1 end point of line)
-            t = (row[1] * (x[1] - dm.coord[dm.id_line[i, 1], 1]) + row[2] * (x[2] - dm.coord[dm.id_line[i, 1], 2])) / norm(row)^2
+            t = (row[1] * (x[1] - dm.coord[dm.id_line[i, 1], 1]) +
+                 row[2] * (x[2] - dm.coord[dm.id_line[i, 1], 2])) / norm(row)^2
             dist = 0
             # If shortest path intersects line, distance is the length of shortest path
             if 0 ≤ t ≤ 1
                 dist = norm(x .- (dm.coord[dm.id_line[i, 1], :] .+ t * row))
-            # Else take distance to closest endpoint
+                # Else take distance to closest endpoint
             elseif t < 0
                 dist = norm(x .- dm.coord[dm.id_line[i, 1], :])
             else
@@ -113,10 +115,12 @@ function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfacto
         end
         return re
     end
-    
+
     bx = zeros(ndofs(cm.dh))
     by = zeros(ndofs(cm.dh))
-    coords = [cm.dh.grid.nodes[i].x for i in unique(reduce(vcat, [collect(cm.dh.grid.cells[i].nodes) for i in 1:size(cm.dh.grid.cells, 1)]))]
+    coords = [cm.dh.grid.nodes[i].x
+              for i in unique(reduce(
+        vcat, [collect(cm.dh.grid.cells[i].nodes) for i in 1:size(cm.dh.grid.cells, 1)]))]
 
     for (i, x) in enumerate(coords)
         bx[i], by[i] = bb(dm, x)
@@ -126,7 +130,6 @@ function distribute_susceptances!(cm::ContModel, dm::DiscModel, σ::Real, bfacto
     cm.by[:] .= max.(by, bmin)
     return nothing
 end
-
 
 """
 $(TYPEDSIGNATURES)
@@ -219,7 +222,6 @@ function distribute_damping!(cm::ContModel,
 
     return nothing
 end
-
 
 """
 $(TYPEDSIGNATURES)

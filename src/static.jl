@@ -286,8 +286,8 @@ function learn_susceptances(;
         mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
         n_epoch::Int = 10000,
         n_batch::Int = 3,
-        n_modes::Int = 654,
-        n_coeffs::Int = 1,
+        n_modes::Union{Nothing, Int} = nothing,
+        n_coeffs::Union{Nothing, Int} = nothing,
         comp_ix::Union{Nothing, Vector{Int}} = nothing,
         bx_init::Union{Nothing, Vector{<:Real}} = nothing,
         by_init::Union{Nothing, Vector{<:Real}} = nothing,
@@ -296,6 +296,12 @@ function learn_susceptances(;
         bmin::Real = 0.1,
         δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
+    if isnothing(n_modes)
+        n_modes = size(mesh.nodes, 1)
+    end
+    if isnothing(n_coeffs) || (n_coeffs > n_modes)
+        n_coeffs = n_modes
+    end
     train = load_discrete_models(train_folder, scale_factor)
     test = load_discrete_models(test_folder, scale_factor)
     @assert check_slack([train; test]) "The slack bus must be the same for all scenarios"
@@ -339,7 +345,7 @@ function learn_susceptances(;
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model, train, test)
+        train_losses, test_losses, model, train, test, n_modes)
 end
 
 function learn_susceptances_dates(;
@@ -349,8 +355,8 @@ function learn_susceptances_dates(;
         test_f_date::DateTime = DateTime(2021, 10, 17, 0),
         test_t_date::DateTime = DateTime(2021, 10, 17, 11),
         mesh_fn::String = MODULE_FOLDER * "/data/panta.msh",
-        n_modes::Int = 654,
-        n_coeffs::Int = 1,
+        n_modes::Union{Nothing, Int} = nothing,
+        n_coeffs::Union{Nothing, Int} = nothing,
         comp_ix::Union{Nothing, Vector{Int}} = nothing,
         bx_init::Union{Nothing, Vector{<:Real}} = nothing,
         by_init::Union{Nothing, Vector{<:Real}} = nothing,
@@ -361,6 +367,12 @@ function learn_susceptances_dates(;
         bmin::Real = 0.1,
         δ = 0.5)::StaticSol
     mesh, scale_factor = get_mesh(mesh_fn)
+    if isnothing(n_modes)
+        n_modes = size(mesh.nodes, 1)
+    end
+    if isnothing(n_coeffs) || (n_coeffs > n_modes)
+        n_coeffs = n_modes
+    end
     pm = parse_file(model_file)
     train = discrete_models_entsoe(pm,
         train_f_date,
@@ -409,7 +421,7 @@ function learn_susceptances_dates(;
     model.disc_proj = disc_proj
 
     return StaticSol(b, losses, train_pred, test_pred, th_train, th_test,
-        train_losses, test_losses, model, train, test)
+        train_losses, test_losses, model, train, test, n_modes)
 end
 
 """
